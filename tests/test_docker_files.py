@@ -40,3 +40,39 @@ def test_readme_docker_commands_use_real_cli_commands():
 def test_dockerfile_uses_locked_install():
     text = (ROOT / "docker" / "Dockerfile").read_text()
     assert "uv sync --locked" in text and "USER epi" in text and 'ENTRYPOINT ["epiinfer"]' in text
+
+
+def test_dockerfile_base_images_pinned_by_digest():
+    text = (ROOT / "docker" / "Dockerfile").read_text()
+    froms = re.findall(r"^FROM (\S+)", text, re.M)
+    assert len(froms) == 2 and all(re.search(r"@sha256:[0-9a-f]{64}$", f) for f in froms), froms
+    assert re.search(r"--from=ghcr\.io/astral-sh/uv:[\d.]+@sha256:[0-9a-f]{64} ", text)
+    assert "LICENSE" in text        # pyproject's license-files needs it at build time
+
+
+def test_publish_workflow_is_tag_triggered_and_safe():
+    yaml = pytest.importorskip("yaml")
+    wf = yaml.safe_load((ROOT / ".github" / "workflows" / "publish.yml").read_text())
+    triggers = wf.get("on", wf.get(True))
+    assert triggers["push"]["tags"] == ["v*"] and "workflow_dispatch" in triggers
+    assert wf["permissions"] == {"contents": "read", "packages": "write"}
+    text = (ROOT / ".github" / "workflows" / "publish.yml").read_text()
+    # branch pushes and manual runs must never push an image
+    assert "startsWith(github.ref, 'refs/tags/v')" in text
+    assert "linux/amd64,linux/arm64" in text and "GITHUB_TOKEN" in text
+    step_names = [s.get("name", "") for s in wf["jobs"]["image"]["steps"]]
+    assert any("match the package version" in n for n in step_names)
+
+
+def test_dependabot_covers_docker_and_actions():
+    yaml = pytest.importorskip("yaml")
+    cfg = yaml.safe_load((ROOT / ".github" / "dependabot.yml").read_text())
+    assert {u["package-ecosystem"] for u in cfg["updates"]} == {"docker", "github-actions"}
+
+
+def test_readme_documents_ghcr_and_apptainer():
+    readme = (ROOT / "README.md").read_text()
+    for needle in ("docker pull ghcr.io/nuzla/epiinfer", "apptainer pull epiinfer.sif docker://",
+                   "### Apptainer / Singularity", "not been tested", "@sha256"):
+        assert needle in readme, needle
+    assert (ROOT / "docs" / "RELEASING.md").exists()

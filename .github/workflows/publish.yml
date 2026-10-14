@@ -1,0 +1,110 @@
+# Publishes the Docker image to GitHub Container Registry: ghcr.io/<owner>/epiinfer
+#
+#   release:  git tag v0.1.0 && git push origin v0.1.0     -> pushes 0.1.0, 0.1 and latest
+#   dry run:  Actions -> publish -> Run workflow            -> builds both architectures,
+#                                                              smoke-tests, pushes NOTHING
+name: publish
+on:
+  push:
+    tags: ["v*"]
+  workflow_dispatch:
+permissions:
+  contents: read
+  packages: write
+concurrency:
+  group: publish-${{ github.ref }}
+  cancel-in-progress: false
+env:
+  IMAGE: ghcr.io/${{ github.repository }}
+jobs:
+  image:
+    runs-on: ubuntu-latest
+    env:
+      PUSH: ${{ startsWith(github.ref, 'refs/tags/v') }}
+    steps:
+      - uses: actions/checkout@v4
+
+      - name: Tag must match the package version
+        if: env.PUSH == 'true'
+        run: |
+          version=$(python3 -c "import tomllib; print(tomllib.load(open('pyproject.toml','rb'))['project']['version'])")
+          if [ "v$version" != "${GITHUB_REF_NAME}" ]; then
+            echo "::error::tag ${GITHUB_REF_NAME} does not match pyproject.toml version $version"; exit 1
+          fi
+
+      - uses: docker/setup-qemu-action@v3         # lets one runner build the arm64 image
+      - uses: docker/setup-buildx-action@v3
+      - uses: docker/login-action@v3
+        if: env.PUSH == 'true'
+        with:
+          registry: ghcr.io
+          username: ${{ github.actor }}
+          password: ${{ secrets.GITHUB_TOKEN }}
+
+      - id: meta
+        uses: docker/metadata-action@v5
+        with:
+          images: ${{ env.IMAGE }}
+          tags: |
+            type=semver,pattern={{version}}
+            type=semver,pattern={{major}}.{{minor}}
+            type=raw,value=dry-run,enable=${{ env.PUSH != 'true' }}
+
+      # 1) amd64 image, loaded locally and exercised before anything is published
+      - name: Build amd64 for the smoke test
+        uses: docker/build-push-action@v6
+        with:
+          context: .
+          file: docker/Dockerfile
+          platforms: linux/amd64
+          load: true
+          tags: epiinfer:smoke
+          cache-from: type=gha
+      - name: Smoke test (arbitrary non-root user)
+        run: |
+          mkdir -p results
+          DEMO="$(docker run --rm epiinfer:smoke demo)"
+          docker run --rm epiinfer:smoke --version
+          docker run --rm epiinfer:smoke forecast --data "$DEMO" --horizon 3 --num-sims 3
+          docker run --rm --user "$(id -u):$(id -g)" -v "$PWD/results:/work/results" \
+            epiinfer:smoke run --data "$DEMO" --method empirical_p1 --start-eval 40 --num-sims 2 --plots
+          ls results/summary_demo_data_empirical_p1.csv results/forecast_demo_data_empirical_p1.png
+
+      # 2) the multi-architecture image: always built (so a dry run proves arm64 compiles),
+      #    pushed only for a version tag
+      - id: build
+        name: Build amd64 + arm64${{ env.PUSH == 'true' && ' and push' || ' (not pushed)' }}
+        uses: docker/build-push-action@v6
+        with:
+          context: .
+          file: docker/Dockerfile
+          platforms: linux/amd64,linux/arm64
+          push: ${{ env.PUSH == 'true' }}
+          tags: ${{ steps.meta.outputs.tags }}
+          labels: ${{ steps.meta.outputs.labels }}
+          provenance: mode=max
+          cache-from: type=gha
+          cache-to: type=gha,mode=max
+
+      - name: Check the pushed image by digest
+        if: env.PUSH == 'true'
+        run: |
+          ref="${IMAGE}@${{ steps.build.outputs.digest }}"
+          docker run --rm "$ref" --version
+          docker run --rm "$ref" demo
+      - name: Record the digest
+        if: env.PUSH == 'true'
+        run: |
+          {
+            echo "### Published ${GITHUB_REF_NAME}"
+            echo
+            echo "Pin this exact image in a paper or script:"
+            echo '```'
+            echo "${IMAGE}@${{ steps.build.outputs.digest }}"
+            echo '```'
+            echo
+            echo "Tags: \`${{ steps.meta.outputs.tags }}\`"
+            echo
+            echo "New packages start **private**: set the package to public under the repository's"
+            echo "Packages settings on GitHub (once), then \`docker pull ${IMAGE}:${GITHUB_REF_NAME#v}\` works for everyone."
+          } >> "$GITHUB_STEP_SUMMARY"

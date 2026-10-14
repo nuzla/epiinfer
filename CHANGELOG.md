@@ -18,6 +18,8 @@ First packaged version of the EpiInfer-CONTACT research code.
   built deterministically.
 - **Packaging.** Managed with uv; `uv.lock` pins every dependency. Python 3.11–3.14 are
   supported, and the minimum dependency versions are tested in CI.
-- **Docker.** The image installs the locked versions and runs as a non-root user.
+- **Docker.** The image installs the locked versions and runs as a non-root user. Base
+  images are pinned by digest. A tag-triggered workflow publishes a multi-architecture
+  image to GHCR; Apptainer/Singularity instructions are in the README (untested).
 - MIT licence.
 - Differences from the paper are documented in `docs/PAPER_VS_CODE.md`.

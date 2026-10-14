@@ -94,7 +94,22 @@ thing you need on the host is Docker. The image is built from this repository; i
 published to a registry. CI builds it on every push and runs `demo`, `forecast` and `run --plots`
 in it as an arbitrary non-root user.
 
-### 1. Build
+### 1. Get the image
+
+**Pull a released image** (Intel/AMD and ARM, including Apple silicon). Released versions are
+published to GitHub's container registry when a version tag is pushed; see the repository's
+Releases and Packages pages for what exists. Until then, build it yourself, below.
+
+```bash
+docker pull ghcr.io/nuzla/epiinfer:0.1.0
+docker tag  ghcr.io/nuzla/epiinfer:0.1.0 epiinfer      # the commands below call it "epiinfer"
+```
+
+For a paper or a script, pin the exact image by digest, which is printed in each release's
+workflow summary: `ghcr.io/nuzla/epiinfer@sha256:…`. Version tags can be re-pointed; digests
+cannot.
+
+**Or build it from this repository:**
 
 ```bash
 docker build -f docker/Dockerfile -t epiinfer .
@@ -175,6 +190,36 @@ and never fakes a result. Everything is written to the results directory.
 LOCAL_USER="$(id -u):$(id -g)" docker compose -f docker/docker-compose.yml run --rm epiinfer \
     reproduce --table openabm --data /data/openabm --out results/paper
 ```
+
+### Apptainer / Singularity (clusters without Docker)
+
+Most HPC systems run [Apptainer](https://apptainer.org/) (formerly Singularity) instead of
+Docker. It converts the same image, with nothing extra to install:
+
+```bash
+apptainer pull epiinfer.sif docker://ghcr.io/nuzla/epiinfer:0.1.0     # once; makes epiinfer.sif
+mkdir -p data results
+apptainer run epiinfer.sif --version
+apptainer run --bind "$PWD/data:/data" epiinfer.sif forecast --data /data/my_dataset --out results/forecast.csv
+apptainer run --bind "$PWD/data:/data" epiinfer.sif reproduce --table openabm --data /data/openabm --out results/paper
+```
+
+Everything after `epiinfer.sif` is passed straight to `epiinfer`, as with `docker run`.
+Differences from Docker:
+
+- It runs as **you**, so there is no `--user` flag and output files are yours.
+- The image itself is read-only. Results go to `results/` in the **current directory**
+  (Apptainer mounts it), so run from a folder you can write to.
+- Datasets must be bound in with `--bind host_dir:/data`, as above.
+- `--containall` or `--no-home` stops the current directory from being mounted; if you use
+  them, bind `results/` explicitly too: `--bind "$PWD/results:/work/results"`.
+- On SingularityCE, replace `apptainer` with `singularity`; the commands are the same.
+- To pin the exact image: `apptainer pull epiinfer.sif docker://ghcr.io/nuzla/epiinfer@sha256:…`.
+- Pulling a big image can fill your home quota. Point the cache elsewhere with
+  `export APPTAINER_CACHEDIR=/scratch/$USER/apptainer`.
+
+This route has **not been tested** by the maintainers (no Apptainer is available to them).
+Please open an issue if a command here does not work.
 
 ### Troubleshooting
 
