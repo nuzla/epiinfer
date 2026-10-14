@@ -129,7 +129,7 @@ The paper's column **reproduces exactly**, but only on its own window. See
 
 The library's Holt-Winters is the authors' own notebook code: additive damped trend, a
 14-day trailing window, origins 25–99, and forecasts clipped at 0. Run on the demo data it
-gives the same RMSE as that code, to 1e-9 (`tests/test_golden.py`).
+gives the same RMSE as that code to within 1e-4 relative (`tests/test_golden.py`); the optimiser stops at slightly different points on macOS and Linux, so an exact match is not expected.
 
 The paper's Holt-Winters column cannot be checked here. The notebook's saved output shows
 it was computed on a different simulated epidemic (`abmcontact10000aprilnewage`, peak 1,044

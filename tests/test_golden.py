@@ -11,6 +11,14 @@ from epiinfer import OPENABM, PAPER
 from epiinfer.calibrate import continuous_calibrate, estimate_p1, solve_p1
 from epiinfer.forecast import build_model
 
+# Counts, ids and grid values are compared exactly. Anything computed with `**`/bisection
+# differs in the last digit between platforms (macOS vs Linux libm), so floats get a tight
+# relative tolerance. Holt-Winters is fitted by scipy's L-BFGS, whose stopping point depends
+# on the platform's BLAS: CI saw 8e-6 between macOS and Linux. 1e-4 still catches any real
+# change (a different window or the missing clip moves RMSE by percents).
+FLOAT_TOL = 1e-12
+HW_TOL = 1e-4
+
 
 def _sets(d):
     return {str(k): sorted(int(x) for x in v) for k, v in sorted(d.items())}
@@ -57,26 +65,28 @@ def test_calibration_matches_original(data, golden, method):
 
     p1, p2 = continuous_calibrate(model, method, observed(30), 30, data.new_asymp, data.new_inf,
                                   data.recovered_on, PAPER, None, None)
-    assert [p1.tolist(), p2.tolist()] == g["day30"]
+    assert np.allclose([p1, p2], g["day30"], rtol=FLOAT_TOL, atol=0)
     q1, q2 = continuous_calibrate(model, method, observed(31), 31, data.new_asymp, data.new_inf,
                                   data.recovered_on, PAPER, p1, p2)
-    assert [q1.tolist(), q2.tolist()] == g["day31"]
+    assert np.allclose([q1, q2], g["day31"], rtol=FLOAT_TOL, atol=0)
 
 
 def test_empirical_p1_matches_original(data, golden):
     model = build_model(data, OPENABM)
     g = golden["estimate_p1"]
     a = estimate_p1(model, data, 30, OPENABM, None)
-    assert a.tolist() == g["day30"]
-    assert estimate_p1(model, data, 31, OPENABM, a).tolist() == g["day31"]
+    assert a.tolist() == pytest.approx(g["day30"], rel=FLOAT_TOL)
+    assert estimate_p1(model, data, 31, OPENABM, a).tolist() == pytest.approx(g["day31"],
+                                                                              rel=FLOAT_TOL)
     half = OPENABM.with_(smoothing=0.5)
-    assert estimate_p1(model, data, 31, half, a).tolist() == g["day31_smooth_half"]
+    assert estimate_p1(model, data, 31, half, a).tolist() == pytest.approx(
+        g["day31_smooth_half"], rel=FLOAT_TOL)
 
 
 def test_solve_p1_matches_original(golden):
     for case in golden["solve_p1"]["cases"]:
         kh = {int(k): v for k, v in case["k_hist"].items()}
-        assert solve_p1(kh, case["observed"]) == case["p1"]
+        assert solve_p1(kh, case["observed"]) == pytest.approx(case["p1"], rel=FLOAT_TOL, abs=1e-15)
 
 
 def test_empirical_projection_matches_original(data, golden):
@@ -101,4 +111,4 @@ def test_holt_winters_matches_authors_notebook(data, golden):
     got = {str(h): r for h, r in zip(df["horizon"], df["rmse"])}
     assert got.keys() == golden["holt_winters_notebook"].keys()
     for h, want in golden["holt_winters_notebook"].items():
-        assert got[h] == pytest.approx(want, rel=1e-9, abs=0), h
+        assert got[h] == pytest.approx(want, rel=HW_TOL, abs=0), h

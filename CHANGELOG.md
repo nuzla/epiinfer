@@ -12,7 +12,7 @@ First packaged version of the EpiInfer-CONTACT research code.
 - **Seeds.** Seeded random streams give the same results whatever `--workers` or `--jobs`
   is set to.
 - **Baselines.** ARIMA(1,1,1) and Holt-Winters follow the authors' notebooks. ARIMA
-  reproduces the paper exactly. Holt-Winters matches the notebook code to 1e-9.
+  reproduces the paper exactly. Holt-Winters matches the notebook code to within 1e-4 (the optimiser differs slightly between platforms).
 - **Reproduce checks.** Each `reproduce` run checks the dataset's identity and records it
   in `dataset_check`. Downloads are verified against SHA-256 hashes, and the archives are
   built deterministically.
