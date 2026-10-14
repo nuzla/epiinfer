@@ -52,7 +52,7 @@ jobs:
 
       # 1) amd64 image, loaded locally and exercised before anything is published
       - name: Build amd64 for the smoke test
-        uses: docker/build-push-action@v6
+        uses: docker/build-push-action@v7
         with:
           context: .
           file: docker/Dockerfile
@@ -74,7 +74,7 @@ jobs:
       #    pushed only for a version tag
       - id: build
         name: Build amd64 + arm64${{ env.PUSH == 'true' && ' and push' || ' (not pushed)' }}
-        uses: docker/build-push-action@v6
+        uses: docker/build-push-action@v7
         with:
           context: .
           file: docker/Dockerfile
