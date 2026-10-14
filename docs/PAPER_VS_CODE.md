@@ -62,21 +62,42 @@ EpiInfer-contact's 156.9 (paper) / 158.0 (this library).
 
 The Holt-Winters column was computed on a different dataset; see item 5.
 
-## 4. The estimated-rate rows are not reproduced by any version of the code
+## 4. The published EpiInfer-contact rows are a different run from the authors' own
 
 In `tab:age_structured` the four knowledge modes are within about 3% of each other at
-every horizon. For example, day 20 ranges from 156.5 to 158.6, so estimating p1 and p2
-apparently cost nothing.
+every horizon (day 20: 156.5 to 158.6), so estimating p1 and p2 apparently cost nothing.
+The code does not behave like that. Three sources agree on what it produces:
 
-| Code | both known | p1 known | p2 known | both unknown (day 5) |
+| Day 5, ALL (RMSE) | both known | p1 known | p2 known | both unknown |
 |---|---|---|---|---|
-| paper | 17.49 | 17.28 | 18.18 | 17.79 |
-| current code (this library) | 17.87 | 52.23 | 17.60 | 31.29 |
-| July 2026 script (true-value start, one-day scoring, damping 0.01) | 17.58 | 30.15 | 18.30 | 31.39 |
+| **Published paper** | 17.49 | 17.28 | 18.18 | 17.79 |
+| Authors' own run of the script (`results_paper_aligned.csv`, 13 July) | 17.25 | 50.69 | 18.89 | 33.69 |
+| **This library** (seed 0, recorded contacts) | 17.87 | 52.23 | 17.60 | 31.29 |
 
-Run-to-run noise is about 5% (seeds 0–2), so these gaps are systematic. The pattern fits
-the estimated rates having stayed at the true values. That cannot be confirmed from the
-material supplied.
+- **The library matches the authors' own run in all 16 cells** (four modes × four
+  horizons), within 8.3%. That is about the Monte-Carlo noise between seeds (5%). It is a
+  check on the port.
+- **The paper does not match either.** Only "both known" agrees with all three.
+- **The July draft explains why.** `EpiInfer_contacttracing_new.pdf` (23 July) reports every
+  cell as three simulations. Its **Simulation 2** is exactly the authors' run above
+  (8.9156, 13.2419, 10.2404 …). Its **Simulation 3** is what the published paper later
+  prints as EpiInfer-contact (8.72, 8.05, 8.50 …), and **Simulation 1** is the older
+  EpiInfer (180.17 …). So the paper's EpiInfer-contact rows are a third run.
+- **Simulation 3 behaves like a different dataset or code.** Its uniform-contact day-1 error
+  is 74.3, against 9.2 in Simulation 2, and its estimated-rate rows barely differ from
+  "both known". Which dataset and code produced it is not in the files supplied.
+  Candidates are the `abmcontact10000aprilnewage` data and the damped-learning script
+  `epiinfer_age_structured _1_1.py` (damping 0.005), which the paper's λ = 0.01 text
+  describes. I could not run them without that data.
+
+Simulation 2's uniform-contact data is not supplied either. Freshly simulated uniform data
+gives 10.4 / 26.7 / 39.2 / 151.2 for "both known", close to Simulation 2's
+9.2 / 21.2 / 37.9 / 138.0 and far from the published 74.3 / 132.1 / 84.1 / 144.4.
+
+The authors' own July report (`EpiInfer_Implementation_Report.pptx`) lists three open
+deviations: the id→age mapping fails its degree check (measured 1.4–1.9×), the
+pre-symptomatic set is seeded from ground truth, and forecasts reuse future contact graphs.
+These are items 1 and 2 above, found independently.
 
 ## 5. The Holt-Winters and LSTM columns use a different epidemic
 
@@ -137,6 +158,6 @@ identity, so this kind of mix-up now prints a warning.
 
 - Implement the paper's reconstruction of the exposed set from infections (item 2), so
   that the method runs on data without the A state.
-- The authors should confirm which configuration produced the estimated-rate rows (item 4),
+- The authors should confirm which dataset and code produced "Simulation 3" (item 4),
   and supply the `abmcontact10000aprilnewage` data behind the Holt-Winters and LSTM columns
   (item 5).

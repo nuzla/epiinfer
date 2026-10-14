@@ -300,3 +300,22 @@ def test_holt_winters_clips_and_falls_back():
     fc = _holt_winters(y, 10)
     assert (fc >= 0).all() and (fc == 0).any()
     assert (_holt_winters(np.array([5.0, 7.0, 9.0]), 3) == 9.0).all()
+
+
+def test_authors_run_targets_complete_and_consistent():
+    """The authors' own run covers every (mode, horizon) the paper table has, and the knowledge
+    modes behave as theory says: knowing more never hurts the 1-day forecast by much."""
+    from epiinfer.reproduce.targets import AUTHORS_RUN_AGE_STRUCTURED, TABLES
+    spec = TABLES["age_structured"]
+    assert set(AUTHORS_RUN_AGE_STRUCTURED) == set(spec["targets"])
+    kb = AUTHORS_RUN_AGE_STRUCTURED[("known_both", 1)][0]
+    assert all(AUTHORS_RUN_AGE_STRUCTURED[(m, 1)][0] >= 0.9 * kb
+               for m in spec["methods"])
+
+
+def test_reproduce_adds_authors_columns_only_where_available(demo_path):
+    from epiinfer.reproduce import reproduce_table
+    age = reproduce_table("age_structured", demo_path, quick=True, methods=("known_both",))
+    assert {"authors_rmse", "authors_ratio"} <= set(age.columns) and age["authors_rmse"].notna().all()
+    oab = reproduce_table("openabm", demo_path, quick=True)
+    assert "authors_rmse" not in oab.columns

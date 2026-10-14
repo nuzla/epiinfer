@@ -44,3 +44,13 @@ def test_age_structured_known_both_reproduces():
     df = reproduce_table("age_structured", _data("age_structured"), methods=("known_both",),
                          contacts="recorded")
     assert (abs(df["rmse_ratio"] - 1) < 0.15).all(), df
+
+
+def test_library_reproduces_the_authors_own_run():
+    """All 16 cells (4 knowledge modes x 4 horizons) vs results_paper_aligned.csv, the
+    authors' 13 July run of the same script on the same data. ~8 min single-process."""
+    from epiinfer.reproduce import reproduce_table
+    df = reproduce_table("age_structured", _data("age_structured"), contacts="recorded", jobs=4)
+    assert len(df) == 16 and (df["dataset_check"] == "ok").all()
+    # Monte-Carlo noise between runs is ~5%; the largest gap seen was 8.3%
+    assert (abs(df["authors_ratio"] - 1) < 0.15).all(), df[["method", "horizon", "authors_ratio"]]

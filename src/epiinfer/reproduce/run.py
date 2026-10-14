@@ -57,12 +57,17 @@ def _run_method(table: str, data_dir: str, method: str, overrides: dict) -> list
             continue
         paper = spec["targets"].get((method, h), (float("nan"), float("nan")))
         paper = tuple(float("nan") if v is None else v for v in paper)
+        authors = spec.get("authors_run", {}).get((method, h))
         rmse, frmse = float(s["rmse"].iloc[0]), float(s["frmse"].iloc[0])
         rows.append({"table": spec["caption"], "method": method, "horizon": h,
                      "contacts": contacts, "paper_rmse": paper[0], "rmse": rmse,
                      "rmse_ratio": rmse / paper[0] if paper[0] == paper[0] else float("nan"),
                      "paper_frmse": paper[1], "frmse": frmse, "n_origins": int(s["n"].iloc[0]),
                      "dataset_check": dataset_check})
+        if "authors_run" in spec:
+            nan = float("nan")
+            rows[-1]["authors_rmse"] = authors[0] if authors else nan
+            rows[-1]["authors_ratio"] = rmse / authors[0] if authors else nan
     return rows
 
 
@@ -78,7 +83,9 @@ def reproduce_table(table: str, data_dir: str | Path, quick: bool = False, seed:
     ``quick`` shortens the evaluation (origins 30..50, 3 sims) to a smoke test; its numbers
     are NOT comparable with the paper. ``jobs`` > 1 runs the methods in parallel processes
     (results are identical to ``jobs=1``). The ``dataset_check`` column says whether
-    ``data_dir`` is the dataset the paper's numbers were computed on.
+    ``data_dir`` is the dataset the paper's numbers were computed on. For ``age_structured``,
+    ``authors_rmse`` / ``authors_ratio`` compare with the authors' own run of the same code
+    (the published paper reports a different run; see docs/PAPER_VS_CODE.md).
     """
     if table not in TABLES:
         raise ValueError(f"unknown table {table!r}; choose from {sorted(TABLES)}")

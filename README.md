@@ -63,8 +63,8 @@ is pre-symptomatic, and real contact-tracing data usually do not record that.
 | Paper table | Command | Agreement |
 |---|---|---|
 | `tab:openabm-forecast` | `uv run epiinfer reproduce --table openabm --data DIR` | within 1% |
-| `tab:age_structured`, both known | `uv run epiinfer reproduce --table age_structured --data DIR` | within 10% |
-| `tab:age_structured`, other modes | (same command) | **not reproduced** |
+| `tab:age_structured`, vs the authors' own run of the same code | `uv run epiinfer reproduce --table age_structured --data DIR` | all 16 cells within 8% |
+| `tab:age_structured`, vs the published paper | (same command) | "both known" within 10%; the other modes differ (the paper reports a different run) |
 | ARIMA column, age-structured | `uv run epiinfer reproduce --table arima_age_structured --data DIR` | exact |
 | Holt-Winters columns | `uv run epiinfer reproduce --table hw_age_structured --data DIR` | dataset not supplied |
 | `tab:uniform` | `uv run epiinfer reproduce --table uniform --data DIR` | dataset not supplied |
@@ -85,7 +85,8 @@ comparisons. It covers five points:
 - it was given the true pre-symptomatic people;
 - ARIMA was scored on a different, harder window;
 - the Holt-Winters and LSTM columns came from a different simulated epidemic;
-- the estimated-rate rows match no version of the code.
+- the paper's estimated-rate rows are a different run from the authors' own, which the
+  library does reproduce.
 
 ## Docker
 

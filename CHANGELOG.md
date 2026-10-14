@@ -22,4 +22,8 @@ First packaged version of the EpiInfer-CONTACT research code.
   images are pinned by digest. A tag-triggered workflow publishes a multi-architecture
   image to GHCR; Apptainer/Singularity instructions are in the README (untested).
 - MIT licence.
+- **Validated against the authors' own run.** `reproduce --table age_structured` reports the
+  authors' 13 July run of the same script (`results_paper_aligned.csv`) next to the paper;
+  the library matches it in all 16 cells within 8.3%. The published paper reports a different
+  run ("Simulation 3" in the authors' July draft).
 - Differences from the paper are documented in `docs/PAPER_VS_CODE.md`.

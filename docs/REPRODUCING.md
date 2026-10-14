@@ -98,22 +98,30 @@ gives ratios of 1.000–1.002.
 
 ### `tab:age_structured`
 
-| Mode (paper label) | Contacts | Day 1 | Day 5 | Day 10 | Day 20 |
-|---|---|---|---|---|---|
-| both known | recorded | 8.78 / 8.72 (1.01) | 17.87 / 17.49 (1.02) | 32.57 / 29.71 (1.10) | 158.0 / 156.9 (1.01) |
-| both known | frozen | 8.78 (1.01) | 18.18 (1.04) | 30.40 (1.02) | 126.3 (0.80) |
-| p1 known (`known_p1`) | recorded | 13.61 / 8.05 (1.69) | 52.23 / 17.28 (3.02) | 48.24 / 29.35 (1.64) | 125.7 / 157.8 (0.80) |
-| p2 known (`known_p2`) | recorded | 8.78 / 8.77 (1.00) | 17.60 / 18.18 (0.97) | 20.36 / 29.98 (0.68) | 125.7 / 158.6 (0.79) |
-| both unknown | recorded | 10.67 / 8.50 (1.25) | 31.29 / 17.79 (1.76) | 44.21 / 29.65 (1.49) | 108.1 / 156.5 (0.69) |
-| both unknown | frozen | 10.67 (1.25) | 32.48 (1.83) | 47.13 (1.59) | 82.7 (0.53) |
+The table compares our RMSE with **two** references, because they disagree: the published
+paper, and the authors' own 13 July run of the same script on the same data
+(`results_paper_aligned.csv`, see `PAPER_VS_CODE.md`, item 4). Ratios are ours ÷ reference
+(recorded contacts, seed 0):
 
-- **Both known reproduces.** Every other mode differs systematically.
-- **Not noise.** Seeds 0, 1 and 2 agree within about 5%; for `unknown_both` at day 5 they
-  give 31.3 / 31.6 / 32.7.
-- **Not the older script.** The July 2026 version of the research script does not
-  reproduce these rows either.
+| Mode (paper label) | Horizon | Ours | Authors' run | Ratio | Paper | Ratio |
+|---|---|---|---|---|---|---|
+| both known | 1 / 5 / 10 / 20 | 8.78 / 17.87 / 32.57 / 158.0 | 8.92 / 17.25 / 30.08 / 158.1 | 0.98 / 1.04 / 1.08 / 1.00 | 8.72 / 17.49 / 29.71 / 156.9 | 1.01 / 1.02 / 1.10 / 1.01 |
+| p1 known (`known_p1`) | 1 / 5 / 10 / 20 | 13.61 / 52.23 / 48.24 / 125.7 | 13.24 / 50.69 / 47.99 / 124.4 | 1.03 / 1.03 / 1.01 / 1.01 | 8.05 / 17.28 / 29.35 / 157.8 | 1.69 / 3.02 / 1.64 / 0.80 |
+| p2 known (`known_p2`) | 1 / 5 / 10 / 20 | 8.78 / 17.60 / 20.36 / 125.7 | 8.92 / 18.89 / 20.91 / 125.3 | 0.98 / 0.93 / 0.97 / 1.00 | 8.77 / 18.18 / 29.98 / 158.6 | 1.00 / 0.97 / 0.68 / 0.79 |
+| both unknown | 1 / 5 / 10 / 20 | 10.67 / 31.29 / 44.21 / 108.1 | 10.24 / 33.69 / 45.92 / 109.0 | 1.04 / 0.93 / 0.96 / 0.99 | 8.50 / 17.79 / 29.65 / 156.5 | 1.25 / 1.76 / 1.49 / 0.69 |
 
-See `PAPER_VS_CODE.md`, item 4.
+- **The library reproduces the authors' own run in all 16 cells**, within 8.3%. That is
+  about the seed-to-seed noise of 5% (seeds 0, 1 and 2 on `known_p1` and `unknown_both`
+  agree within 5%).
+- **The published paper agrees only for "both known"** (within 10%).
+- **The cause is the paper, not the port.** The authors' July draft shows the published
+  EpiInfer-contact numbers are a third run, "Simulation 3", which is not this script's run on
+  this data. See `PAPER_VS_CODE.md`, item 4.
+- **Without look-ahead (`--contacts frozen`)** the picture changes mostly at day 20. For
+  example, "both known" gives 126.3 against 158.0, and "both unknown" gives 82.7 against 108.1.
+
+`EPIINFER_PAPER_DATA=data uv run --all-extras pytest -m paper` re-checks all 16 cells against
+the authors' run.
 
 ### ARIMA(1,1,1), age-structured (`tab:baseline-abs`)
 

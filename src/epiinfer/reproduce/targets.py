@@ -25,6 +25,22 @@ AGE_STRUCTURED = {
     ("unknown_both", 10): (29.65, 0.043), ("unknown_both", 20): (156.49, 0.230),
 }
 
+#: The AUTHORS' OWN RUN of epiinfer_paper_aligned.py on the archived age-structured data,
+#: ALL row (``results_paper_aligned.csv``, 13 July 2026): ``{(method, horizon): (rmse, frmse)}``.
+#: It is "Simulation 2" in the authors' July compiled draft (EpiInfer_contacttracing_new.pdf);
+#: the published paper reports "Simulation 3" instead. This library reproduces this run (all
+#: four modes) to within 8.3% (docs/REPRODUCING.md).
+AUTHORS_RUN_AGE_STRUCTURED = {
+    ("known_both", 1): (8.9156, 0.0131), ("known_both", 5): (17.2452, 0.0256),
+    ("known_both", 10): (30.0811, 0.0444), ("known_both", 20): (158.1382, 0.2335),
+    ("known_p1", 1): (13.2419, 0.0195), ("known_p1", 5): (50.6933, 0.0753),
+    ("known_p1", 10): (47.9931, 0.0709), ("known_p1", 20): (124.4041, 0.1837),
+    ("known_p2", 1): (8.9215, 0.0131), ("known_p2", 5): (18.8929, 0.0281),
+    ("known_p2", 10): (20.9089, 0.0309), ("known_p2", 20): (125.2740, 0.1850),
+    ("unknown_both", 1): (10.2404, 0.0151), ("unknown_both", 5): (33.6882, 0.0500),
+    ("unknown_both", 10): (45.9206, 0.0678), ("unknown_both", 20): (109.0364, 0.1610),
+}
+
 #: tab:uniform, EpiInfer-contact columns (RMSE, fRMSE). Dataset: uniform contacts.
 UNIFORM = {
     ("known_both", 1): (74.32, 0.117), ("known_both", 5): (132.09, 0.190),
@@ -69,6 +85,7 @@ FINGERPRINT_APRIL_UNIFORM = (10000, 101, 1012)
 
 TABLES = {
     "age_structured": {"targets": AGE_STRUCTURED, "group": "ALL", "fingerprint": FINGERPRINT_AGE,
+                       "authors_run": AUTHORS_RUN_AGE_STRUCTURED,
                        "methods": ("known_both", "known_p1", "known_p2", "unknown_both"),
                        "default_data": "age_structured", "caption": "tab:age_structured"},
     "uniform": {"targets": UNIFORM, "group": "ALL",
