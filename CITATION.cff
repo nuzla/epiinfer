@@ -2,6 +2,13 @@ cff-version: 1.2.0
 message: "If you use this software, please cite the EpiInfer-CONTACT paper."
 title: "epiinfer"
 version: 0.1.0
+authors:
+  - family-names: Kascelan
+    given-names: Jovan
+  - family-names: Yang
+    given-names: Ruoxi
+  - family-names: Shasha
+    given-names: Dennis
 preferred-citation:
   type: article
   title: "EpiInfer-CONTACT: Forecasting Infection Rates in Epidemics Given Contact Tracing Information"
@@ -9,9 +16,9 @@ preferred-citation:
     - family-names: Kascelan
       given-names: Jovan
     - family-names: Yang
-      given-names: Runze
+      given-names: Ruoxi
     - family-names: Shasha
       given-names: Dennis
   journal: "Algorithms"
   year: 2025
-  notes: "Author list and bibliographic details taken from the code's docstring; verify against the published version before release."
+  notes: "Authors from the \\AuthorNames field of the 2025 Algorithms proof source; add volume, article number and DOI once published."

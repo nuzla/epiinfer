@@ -83,8 +83,15 @@ def detect_state_codes(df_status: pd.DataFrame, states_total: pd.DataFrame | Non
                      counts.get(s_code), s_true)
             return default
         if s_code != 0:
-            log.warning("susceptible is state %s, not 0; remapping", s_code)
-            return {"S": int(s_code), "A": 1, "I": 2, "R": 3}
+            # Swap codes so S takes s_code and whichever compartment had s_code takes 0;
+            # plain reassignment would give two compartments the same code.
+            codes = dict(default)
+            for key, val in default.items():
+                if val == s_code:
+                    codes[key] = 0
+            codes["S"] = int(s_code)
+            log.warning("susceptible is state %s, not 0; using %s", s_code, codes)
+            return codes
         return default
     except Exception as exc:  # noqa: BLE001 - detection is best effort
         log.info("state auto-detect failed (%r); using default", exc)
@@ -95,9 +102,18 @@ def _build_age_of(d: Path, pop_total, pop_df, df_status) -> np.ndarray:
     """id -> age group. Priority: explicit file, embedded column, contiguous id ranges."""
     explicit = d / "individual_age_group.csv"
     if explicit.exists():
-        m = pd.read_csv(explicit)
+        m = _require(explicit, ("id", "age_group"))
+        groups = m["age_group"]
+        if not pd.api.types.is_integer_dtype(groups):        # labels such as "0-19"
+            labels = [str(x) for x in pop_df["age_group"]]
+            index = {lab: i for i, lab in enumerate(labels)}
+            unknown = sorted(set(groups.astype(str)) - set(index))
+            if unknown:
+                raise DataFormatError(f"{explicit.name}: age groups {unknown} are not in "
+                                      f"age_group_population.csv {labels}")
+            groups = groups.astype(str).map(index)
         age_of = np.full(pop_total, -1, dtype=np.int64)
-        age_of[m["id"].to_numpy()] = m["age_group"].to_numpy()
+        age_of[m["id"].to_numpy()] = groups.to_numpy()
         log.info("id->age: individual_age_group.csv")
         return age_of
     if "age" in df_status.columns:
@@ -125,7 +141,12 @@ def validate_age_mapping(age_of, daily_contacts, d: Path, labels) -> bool:
     if not path.exists() or 1 not in daily_contacts:
         return True
     ref = pd.read_csv(path)
-    ref_d1 = ref[ref["day"] == 1].set_index("age")["c"].to_dict()
+    col = next((c for c in ("c", "avg_contacts") if c in ref.columns), None)
+    if col is None or not {"day", "age"} <= set(ref.columns):
+        log.warning("%s: expected columns day,age,c (or avg_contacts); skipping the check",
+                    path.name)
+        return True
+    ref_d1 = ref[ref["day"] == 1].set_index("age")[col].to_dict()
     if not ref_d1:
         return True
     deg = np.zeros(age_of.size, dtype=np.int64)
@@ -161,8 +182,10 @@ def load_dataset(path: str | Path, name: str | None = None) -> Dataset:
     if pop_path.exists():
         pop_df = _require(pop_path, ("age_group", "population"))
     elif ages_path.exists():
-        m = pd.read_csv(ages_path)
+        m = _require(ages_path, ("id", "age_group"))
         counts = m.groupby("age_group").size().sort_index()
+        if pd.api.types.is_integer_dtype(m["age_group"]):     # fill empty group indices
+            counts = counts.reindex(range(int(counts.index.max()) + 1), fill_value=0)
         pop_df = pd.DataFrame({"age_group": [str(g) for g in counts.index],
                                "population": counts.to_numpy()})
     else:
@@ -171,10 +194,14 @@ def load_dataset(path: str | Path, name: str | None = None) -> Dataset:
     st_path = d / "states_total.csv"
     states_total = pd.read_csv(st_path) if st_path.exists() else None
     pop_total = int(pop_df["population"].sum())
-    if int(df_status["id"].max()) >= pop_total:
-        raise DataFormatError(
-            f"individual_day_state.csv has id {int(df_status['id'].max())} but the population "
-            f"is {pop_total}; ids must be 0..N-1")
+    for fname, frame, cols in (("individual_day_state.csv", df_status, ("id",)),
+                               ("timed_edges.csv", df_contacts, ("i", "j"))):
+        for c in cols:
+            lo, hi = int(frame[c].min()), int(frame[c].max())
+            if lo < 0 or hi >= pop_total:
+                raise DataFormatError(
+                    f"{fname}: column {c!r} has ids in [{lo}, {hi}] but the population is "
+                    f"{pop_total}; ids must be 0..N-1")
 
     codes = detect_state_codes(df_status, states_total)
     S, A, I, R = codes["S"], codes["A"], codes["I"], codes["R"]
@@ -214,7 +241,10 @@ def load_dataset(path: str | Path, name: str | None = None) -> Dataset:
     gt_group = {g: {} for g in range(len(labels))}
     gi_path = d / "daily_group_infected.csv"
     if gi_path.exists():
-        for row in _require(gi_path, ("day", "age", "infected")).itertuples(index=False):
+        gi = _require(gi_path, ("day", "age", "infected"))
+        if gi["age"].min() < 0 or gi["age"].max() >= len(labels):
+            raise DataFormatError(f"{gi_path.name}: age index outside 0..{len(labels) - 1}")
+        for row in gi.itertuples(index=False):
             gt_group[int(row.age)][int(row.day)] = int(row.infected)
     else:
         for day in all_days:
@@ -223,6 +253,9 @@ def load_dataset(path: str | Path, name: str | None = None) -> Dataset:
                 np.zeros(len(labels), dtype=np.int64)
             for g in range(len(labels)):
                 gt_group[g][day] = int(bc[g])
+    for g in gt_group:                      # the group file may omit zero counts
+        for day in all_days:
+            gt_group[g].setdefault(day, 0)
     if states_total is not None and {"day", "I"} <= set(states_total.columns):
         gt_total = dict(zip(states_total["day"], states_total["I"], strict=False))
     else:

@@ -1,13 +1,15 @@
 """Download and verify dataset archives (the paper's exact datasets, hosted as release assets).
 
-The hosting location is not baked in: pass ``--url`` or set ``EPIINFER_DATA_URL``. Every
-download is verified against a SHA-256 you supply or against ``data/checksums.txt``.
+The hosting location is not baked in: pass ``--url`` or set ``EPIINFER_DATA_URL``. Pass
+the archive's SHA-256 (published in the release's ``checksums.txt``) to verify the download;
+without it the hash is printed so you can compare it yourself.
 """
 
 from __future__ import annotations
 
 import hashlib
 import os
+import urllib.parse
 import urllib.request
 import zipfile
 from pathlib import Path
@@ -27,22 +29,25 @@ def fetch(url: str | None, dest: str | Path, expected_sha256: str | None = None)
     if not url:
         raise SystemExit("no data URL: pass --url or set EPIINFER_DATA_URL "
                          "(see docs/REPRODUCING.md), or generate data with `epiinfer simulate`")
-    if not url.lower().startswith(("https://", "http://localhost")):
+    parsed = urllib.parse.urlparse(url)
+    local = parsed.scheme == "http" and parsed.hostname in ("localhost", "127.0.0.1")
+    if parsed.scheme != "https" and not local:
         raise SystemExit("refusing non-HTTPS data URL")
     dest = Path(dest)
     dest.mkdir(parents=True, exist_ok=True)
-    archive = dest / Path(url).name
+    archive = dest / (Path(parsed.path).name or "data.zip")
     urllib.request.urlretrieve(url, archive)  # noqa: S310 - scheme checked above
     got = sha256(archive)
     if expected_sha256 and got.lower() != expected_sha256.lower():
         archive.unlink()
-        raise SystemExit(f"checksum mismatch for {archive.name}: expected {expected_sha256}, got {got}")
+        raise SystemExit(f"checksum mismatch for {archive.name}: "
+                         f"expected {expected_sha256}, got {got}")
     if not expected_sha256:
         print(f"WARNING: no checksum supplied; archive sha256 = {got}")
+    root = dest.resolve()
     with zipfile.ZipFile(archive) as z:
         for member in z.namelist():
-            target = (dest / member).resolve()
-            if not str(target).startswith(str(dest.resolve())):
+            if not (root / member).resolve().is_relative_to(root):
                 raise SystemExit(f"unsafe path in archive: {member}")
         z.extractall(dest)
     return dest

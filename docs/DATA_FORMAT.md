@@ -11,11 +11,22 @@ starting at 0 (the contact graph usually starts at day 1).
 | `individual_age_group.csv` | `id,age_group` (0-based group index) — **preferred**, unambiguous | one of these two |
 | `states_total.csv` | `day,S,A,I,R` (any column order) — only used to auto-check the state encoding | no (derived) |
 | `daily_group_infected.csv` | `day,age,infected` — symptomatic (I) count per group | no (derived) |
-| `daily_group_avg_contacts.csv` | `day,age,c` — used only to sanity-check the id→age mapping | no |
+| `daily_group_avg_contacts.csv` | `day,age,c` (or `avg_contacts`) — used only to sanity-check the id→age mapping | no |
+
+Every day from 0 to the last day should be present in `individual_day_state.csv`. Missing
+days are treated as "nobody in that state". `daily_group_infected.csv` may omit zero
+counts.
 
 Compartments: **S** susceptible, **A** infected and infectious but not yet symptomatic
 (the paper's *E*), **I** symptomatic and isolated, **R** recovered. The forecast target is
 the number of people in **I**.
+
+> **Important — the A state must be known.** As in the code behind the paper, the model is
+> seeded with *who is in A* on recent days, read from `individual_day_state.csv`.
+> Simulators provide this. Real contact-tracing data usually do not: they record
+> symptomatic or tested people only. With such data you must first impute the A state
+> (for example by back-dating confirmed cases by the incubation period). The paper's own
+> reconstruction is not implemented yet; see `PAPER_VS_CODE.md`, item 2.
 
 ## Mapping your own data
 
@@ -34,7 +45,7 @@ into A by subtraction; the model script itself does not. See `docs/PAPER_VS_CODE
 
 ## What the loader checks
 
-* required files/columns exist; ids lie in `0 … N-1`
+* required files/columns exist; ids in both the state file and the edge list lie in `0 … N-1`
 * every id gets an age group in range
 * the susceptible code is confirmed against `states_total.csv` (when present)
 * mean day-1 contacts per group is compared with `daily_group_avg_contacts.csv` (warns at >15%)

@@ -8,6 +8,13 @@ Compartment flow (the paper's S-E-I-R with E called A, "asymptomatic/pre-symptom
 
 All randomness is drawn from an explicit ``numpy.random.RandomState`` so that a
 run is reproducible from its seed regardless of thread or process count.
+
+Contacts after the forecast origin: the paper (section "Contact Information for
+Forecasting") states that future contact data are not used. Pass ``graph_until=origin``
+to :meth:`EpiInferCore.project` to enforce that: every day after ``graph_until`` reuses the
+origin day's graph ("assume the people whom P meets are the same as on day d"). With
+``graph_until=None`` the recorded graph of each future day is used, which is what the
+original research scripts did (they therefore looked ahead at future contacts).
 """
 
 from __future__ import annotations
@@ -24,10 +31,12 @@ class EpiInferCore:
     meets are the same as on day d").
     """
 
-    def __init__(self, population_ids, daily_contacts, age_of, inc: int, duration: int):
+    def __init__(self, population_ids, daily_contacts, age_of, inc: int, duration: int,
+                 n_groups: int | None = None):
         self.population = set(population_ids)
         self.age_of = np.asarray(age_of, dtype=np.int64)
-        self.n_groups = int(self.age_of.max()) + 1
+        # n_groups comes from the dataset's labels: a group with no members still counts.
+        self.n_groups = int(n_groups) if n_groups is not None else int(self.age_of.max()) + 1
         self.inc = inc
         self.duration = duration
         self.adj: dict[int, dict[int, set]] = {}
@@ -41,9 +50,16 @@ class EpiInferCore:
             self.adj[day] = day_adj
         self.max_contact_day = max(self.adj) if self.adj else -1
 
-    def infectious_encounters(self, infectious, susceptible, day) -> dict:
+    def contact_day(self, day: int, graph_until: int | None = None) -> int:
+        """Which recorded day's graph stands in for ``day``."""
+        last = self.max_contact_day if graph_until is None else min(graph_until,
+                                                                     self.max_contact_day)
+        return min(day, last)
+
+    def infectious_encounters(self, infectious, susceptible, day,
+                              graph_until: int | None = None) -> dict:
         """FINDPROB counts: ``{susceptible id: number of infectious contacts on day}``."""
-        adj_d = self.adj.get(min(day, self.max_contact_day), {})
+        adj_d = self.adj.get(self.contact_day(day, graph_until), {})
         encounters: dict[int, int] = {}
         for a in infectious:
             for nb in adj_d.get(a, ()):
@@ -51,7 +67,8 @@ class EpiInferCore:
                     encounters[nb] = encounters.get(nb, 0) + 1
         return encounters
 
-    def predict(self, infectious, susceptible, p1_vec, day, rng) -> set:
+    def predict(self, infectious, susceptible, p1_vec, day, rng,
+                graph_until: int | None = None) -> set:
         """Alg. 3: susceptibles newly exposed on ``day``.
 
         A susceptible with k infectious contacts is exposed with probability
@@ -59,7 +76,7 @@ class EpiInferCore:
         """
         if not infectious or not susceptible:
             return set()
-        encounters = self.infectious_encounters(infectious, susceptible, day)
+        encounters = self.infectious_encounters(infectious, susceptible, day, graph_until)
         if not encounters:
             return set()
         at_risk = np.fromiter(encounters.keys(), np.int64, len(encounters))
@@ -78,7 +95,7 @@ class EpiInferCore:
         return out
 
     def project(self, p1_vec, p2_vec, new_asymp_hist, new_inf_hist, start_day, end_day,
-                immune, rng):
+                immune, rng, graph_until: int | None = None):
         """Roll the dynamics from ``start_day`` to ``end_day`` (exclusive).
 
         Returns ``{day: array([I_g0, I_g1, ...])}``: symptomatic count per group at
@@ -86,6 +103,7 @@ class EpiInferCore:
 
         ``new_asymp_hist``/``new_inf_hist`` are ``{day: set(ids)}`` of who newly
         entered A / I on recent days; ``immune`` are ids recovered before ``start_day``.
+        ``graph_until``: last day whose recorded contacts may be used (see module docstring).
         """
         p1_vec = np.asarray(p1_vec, float)
         p2_vec = np.asarray(p2_vec, float)
@@ -107,7 +125,7 @@ class EpiInferCore:
         for day in range(start_day, end_day):
             susceptible = self.population - (asymp | infected | recovered)
 
-            newly_asymp = self.predict(asymp, susceptible, p1_vec, day, rng)       # S -> A
+            newly_asymp = self.predict(asymp, susceptible, p1_vec, day, rng, graph_until)  # S -> A
             new_asymp[day + 1] = newly_asymp
 
             cohort = new_asymp.get((day + 1) - self.inc)                            # A -> I

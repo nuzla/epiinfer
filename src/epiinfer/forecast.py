@@ -28,7 +28,23 @@ def sim_rng(seed: int, day: int, sim: int) -> np.random.RandomState:
 
 def build_model(data: Dataset, cfg: Config) -> EpiInferCore:
     return EpiInferCore(range(data.population_total), data.daily_contacts, data.age_of,
-                        cfg.inc, cfg.duration)
+                        cfg.inc, cfg.duration, n_groups=data.n_groups)
+
+
+def _lookback(method: str, model: EpiInferCore) -> int:
+    """Days of observed history used to seed a forecast.
+
+    The empirical method seeds ``inc + duration + 1`` days (as in the original script). The
+    grid methods used a fixed 8 days, tuned for inc = duration = 7; it is widened when a
+    longer ``inc`` or ``duration`` would otherwise drop A or I cohorts from the seed.
+    """
+    if method == EMPIRICAL_METHOD:
+        return model.inc + model.duration + 1
+    return max(8, model.inc + 1, model.duration + 1)
+
+
+def _graph_until(cfg: Config, origin: int) -> int | None:
+    return origin if cfg.contacts == "frozen" else None
 
 
 def _check_method(method: str) -> None:
@@ -56,8 +72,11 @@ def _history(data, na, ni, day, lookback):
 
 def monte_carlo(model, p1, p2, h_a, h_i, day, end_day, seed_rec, cfg, pool=None):
     """Average ``cfg.num_sims`` trajectories; returns ``{day: per-group mean counts}``."""
+    graph_until = _graph_until(cfg, day)
+
     def one(i):
-        return model.project(p1, p2, h_a, h_i, day, end_day, seed_rec, sim_rng(cfg.seed, day, i))
+        return model.project(p1, p2, h_a, h_i, day, end_day, seed_rec, sim_rng(cfg.seed, day, i),
+                             graph_until)
     sims = list(pool.map(one, range(cfg.num_sims))) if pool else \
         [one(i) for i in range(cfg.num_sims)]
     agg: dict[int, np.ndarray] = {}
@@ -108,13 +127,14 @@ def rolling_forecast(model, data: Dataset, method: str, cfg: Config, quiet: bool
         start = max(model.inc + model.duration + 1, max_day - 10)
         log.info("data ends day %s; lowering start_eval to %s", last_day, start)
 
-    lookback = (model.inc + model.duration + 1) if method == EMPIRICAL_METHOD else 8
+    lookback = _lookback(method, model)
     use_threads = cfg.mc_threads > 1 and cfg.num_sims > 1
     pool = ThreadPoolExecutor(max_workers=min(cfg.mc_threads, cfg.num_sims)) if use_threads else None
     rows, rates = [], []
     prev_p1 = prev_p2 = None
+    stop = max_day if cfg.last_origin is None else min(max_day, cfg.last_origin + 1)
     try:
-        for day in range(start, max_day):
+        for day in range(start, stop):
             p1, p2 = estimate_rates(method, model, data, cfg, day, prev_p1, prev_p2, na, ni)
             prev_p1, prev_p2 = p1, p2
             rates.append({"day": day, **{f"p1_{g}": float(p1[g]) for g in range(n)},
@@ -128,7 +148,7 @@ def rolling_forecast(model, data: Dataset, method: str, cfg: Config, quiet: bool
                               data.recovered_on.get(day, set()), cfg, pool)
             for h in cfg.horizons:
                 tgt = day + h
-                if tgt not in avg:
+                if tgt not in avg or tgt > last_day:   # never score against a missing day
                     continue
                 pv = avg[tgt]
                 for g in range(n):
@@ -168,7 +188,8 @@ def forecast(data: Dataset | str | Path, horizon: int = 14, method: str = "unkno
              **overrides) -> pd.DataFrame:
     """Forecast symptomatic counts for the ``horizon`` days after ``from_day``.
 
-    ``from_day`` defaults to the last observed day. The smoothed rate estimate is warmed up
+    ``from_day`` defaults to the last observed day; contacts after it are never used
+    (``cfg.contacts`` is ignored here). The smoothed rate estimate is warmed up
     over the ``warmup`` days before it (smoothing 0.5 forgets the neutral prior in ~5 days;
     ignored for ``empirical_p1``, which refits from scratch each day). Contacts beyond the
     recorded graph are held at the last recorded day. Returns one row per (group, target day) with the
@@ -181,32 +202,38 @@ def forecast(data: Dataset | str | Path, horizon: int = 14, method: str = "unkno
     cfg = (cfg or default_config(method)).with_(**overrides)
     model = build_model(data, cfg)
     na, ni = data.transitions("strict" if method == EMPIRICAL_METHOD else "diff")
-    day = max(data.all_days) if from_day is None else int(from_day)
-    n = model.n_groups
+    last = max(data.all_days)
     first = model.inc + model.duration + 1
+    day = last if from_day is None else int(from_day)
+    if not first <= day <= last:
+        raise ValueError(f"from_day must be between {first} (inc + duration + 1) and the last "
+                         f"observed day {last}; got {day}")
+    if horizon < 1:
+        raise ValueError("horizon must be >= 1")
+    n = model.n_groups
     prev_p1 = prev_p2 = None
     start = day if method == EMPIRICAL_METHOD else max(first, day - warmup)
     for d in range(start, day + 1):
         prev_p1, prev_p2 = estimate_rates(method, model, data, cfg, d, prev_p1, prev_p2, na, ni)
     p1, p2 = prev_p1, prev_p2
-    lookback = (model.inc + model.duration + 1) if method == EMPIRICAL_METHOD else 8
-    h_a, h_i = _history(data, na, ni, day, lookback)
+    h_a, h_i = _history(data, na, ni, day, _lookback(method, model))
     end = day + horizon + 1
     seed_rec = data.recovered_on.get(day, set())
     trajectories = [model.project(p1, p2, h_a, h_i, day, end, seed_rec,
-                                  sim_rng(cfg.seed, day, i)) for i in range(cfg.num_sims)]
+                                  sim_rng(cfg.seed, day, i), graph_until=day)
+                    for i in range(cfg.num_sims)]
     out = []
     for t in range(day + 1, end):
         stack = np.stack([tr[t] for tr in trajectories])          # sims x groups
         for g in range(n + 1):
             vals = stack.sum(axis=1) if g == n else stack[:, g]
-            actual = (data.gt_total.get(t) if g == n else data.gt_group[g].get(t)) \
-                if t in data.gt_total else float("nan")
+            observed = t <= last
+            actual = (data.gt_total.get(t, 0) if g == n else data.gt_group[g].get(t, 0)) \
+                if observed else float("nan")
             out.append({"group": "ALL" if g == n else data.age_labels[g], "origin_day": day,
                         "target_day": t, "horizon": t - day, "mean": float(vals.mean()),
                         "p10": float(np.percentile(vals, 10)),
-                        "p90": float(np.percentile(vals, 90)),
-                        "actual": float(actual) if actual == actual else float("nan")})
+                        "p90": float(np.percentile(vals, 90)), "actual": float(actual)})
     return pd.DataFrame(out)
 
 

@@ -3,6 +3,7 @@
 from __future__ import annotations
 
 import logging
+from concurrent.futures import ProcessPoolExecutor
 from pathlib import Path
 
 import pandas as pd
@@ -14,40 +15,68 @@ from .targets import TABLES
 log = logging.getLogger("epiinfer")
 
 
+def _run_method(table: str, data_dir: str, method: str, overrides: dict) -> list[dict]:
+    spec = TABLES[table]
+    data = load_dataset(data_dir)
+    if "baseline_window" in spec:                      # statistical baseline, own window
+        from ..baselines import rolling_baseline
+        first, last = spec["baseline_window"]
+        horizons = overrides["horizons"]
+        summ = rolling_baseline(data, method, horizons, start_eval=first, last_origin=last)
+        summ = summ.assign(group="ALL")
+        contacts = "n/a"
+    else:
+        cfg = default_config(method).with_(**overrides)
+        horizons = cfg.horizons
+        summ = rolling_forecast(build_model(data, cfg), data, method, cfg).summary()
+        contacts = cfg.contacts
+    summ = summ[summ["group"] == spec["group"]]
+    rows = []
+    for h in horizons:
+        s = summ[summ["horizon"] == h]
+        if s.empty:
+            continue
+        paper = spec["targets"].get((method, h), (float("nan"), float("nan")))
+        paper = tuple(float("nan") if v is None else v for v in paper)
+        rmse, frmse = float(s["rmse"].iloc[0]), float(s["frmse"].iloc[0])
+        rows.append({"table": spec["caption"], "method": method, "horizon": h,
+                     "contacts": contacts, "paper_rmse": paper[0], "rmse": rmse,
+                     "rmse_ratio": rmse / paper[0] if paper[0] == paper[0] else float("nan"),
+                     "paper_frmse": paper[1], "frmse": frmse, "n_origins": int(s["n"].iloc[0])})
+    return rows
+
+
 def reproduce_table(table: str, data_dir: str | Path, quick: bool = False, seed: int = 0,
                     num_sims: int | None = None, workers: int = 1,
                     horizons: tuple[int, ...] | None = None,
-                    methods: tuple[str, ...] | None = None) -> pd.DataFrame:
+                    methods: tuple[str, ...] | None = None, contacts: str = "recorded",
+                    jobs: int = 1) -> pd.DataFrame:
     """Re-run ``table`` on ``data_dir`` and return paper vs. measured values.
 
+    ``contacts="recorded"`` (default) matches the code that produced the published numbers,
+    which used each future day's recorded contacts; ``"frozen"`` removes that look-ahead.
     ``quick`` shortens the evaluation (origins 30..50, 3 sims) to a smoke test; its numbers
-    are NOT comparable with the paper. Columns: method, horizon, paper_rmse, rmse,
-    rmse_ratio (ours / paper), paper_frmse, frmse.
+    are NOT comparable with the paper. ``jobs`` > 1 runs the methods in parallel processes
+    (results are identical to ``jobs=1``).
     """
     if table not in TABLES:
         raise ValueError(f"unknown table {table!r}; choose from {sorted(TABLES)}")
     spec = TABLES[table]
-    data = load_dataset(data_dir)
-    rows = []
-    for method in (methods or spec["methods"]):
-        cfg = default_config(method).with_(seed=seed, mc_threads=workers)
-        cfg = cfg.with_(horizons=horizons or (1, 5, 10, 20))
-        if quick:
-            cfg = cfg.with_(start_eval=30, max_day=50, num_sims=3)
-        if num_sims:
-            cfg = cfg.with_(num_sims=num_sims)
-        res = rolling_forecast(build_model(data, cfg), data, method, cfg)
-        summ = res.summary()
-        summ = summ[summ["group"] == spec["group"]]
-        for h in cfg.horizons:
-            s = summ[summ["horizon"] == h]
-            if s.empty:
-                continue
-            paper = spec["targets"].get((method, h), (float("nan"), float("nan")))
-            rmse, frmse = float(s["rmse"].iloc[0]), float(s["frmse"].iloc[0])
-            rows.append({"table": spec["caption"], "method": method, "horizon": h,
-                         "paper_rmse": paper[0], "rmse": rmse,
-                         "rmse_ratio": rmse / paper[0] if paper[0] == paper[0] else float("nan"),
-                         "paper_frmse": paper[1], "frmse": frmse,
-                         "n_origins": int(s["n"].iloc[0])})
-    return pd.DataFrame(rows)
+    methods = tuple(methods or spec["methods"])
+    unknown = [m for m in methods if m not in spec["methods"]]
+    if unknown:
+        raise ValueError(f"{table} has no published values for {unknown}; "
+                         f"choose from {spec['methods']}")
+    over: dict = {"seed": seed, "mc_threads": workers, "contacts": contacts,
+                  "horizons": horizons or (1, 5, 10, 20)}
+    if quick:
+        over.update(start_eval=30, max_day=50, num_sims=3)
+    if num_sims:
+        over["num_sims"] = num_sims
+    if jobs > 1 and len(methods) > 1:
+        with ProcessPoolExecutor(max_workers=min(jobs, len(methods))) as ex:
+            parts = list(ex.map(_run_method, [table] * len(methods), [str(data_dir)] * len(methods),
+                                methods, [over] * len(methods)))
+    else:
+        parts = [_run_method(table, str(data_dir), m, over) for m in methods]
+    return pd.DataFrame([row for part in parts for row in part])

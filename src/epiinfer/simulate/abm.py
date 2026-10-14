@@ -14,7 +14,7 @@ the datasets shipped with the paper. Use ``epiinfer fetch-data`` for the exact f
 
 from __future__ import annotations
 
-from dataclasses import dataclass, field
+from dataclasses import dataclass
 from pathlib import Path
 
 import numpy as np
@@ -48,7 +48,6 @@ class AgeMixConfig:
     core_frac: float = 0.7
     init_a: int = 8
     seed: int = 123
-    extra: dict = field(default_factory=dict, compare=False)
 
     def matrix(self) -> np.ndarray:
         m = CONTACT_MATRICES[self.contact] if isinstance(self.contact, str) \

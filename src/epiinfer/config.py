@@ -9,11 +9,15 @@ Two presets mirror the two experiments in the paper:
 
 from __future__ import annotations
 
-from dataclasses import dataclass, field, replace
+from dataclasses import dataclass, replace
 
 CALIBRATED_METHODS = ("unknown_both", "known_p2", "known_p1", "known_both")
 EMPIRICAL_METHOD = "empirical_p1"
 METHODS = CALIBRATED_METHODS + (EMPIRICAL_METHOD,)
+#: "frozen": after the forecast origin, reuse the origin day's contact graph (no look-ahead;
+#: what the paper describes). "recorded": use each future day's recorded graph (what the
+#: original research scripts did; needed to reproduce the published numbers).
+CONTACT_MODES = ("frozen", "recorded")
 
 
 @dataclass(frozen=True)
@@ -23,11 +27,13 @@ class Config:
     duration: int = 7                 # days spent in I (symptomatic, isolated)
     # --- rolling forecast -----------------------------------------------------
     horizons: tuple[int, ...] = (1, 5, 10, 20, 50)
-    start_eval: int = 25
-    max_day: int = 100
+    start_eval: int = 25              # first forecast origin
+    max_day: int = 100                # origins < max_day; targets <= max_day and <= last data day
+    last_origin: int | None = None    # last forecast origin (default: max_day - 1)
     num_sims: int = 10                # Monte-Carlo trajectories averaged per forecast
     seed: int = 0                     # all randomness derives from this
     mc_threads: int = 1               # threads for the Monte-Carlo trajectories
+    contacts: str = "frozen"          # see CONTACT_MODES
     # --- calibrated (grid) method --------------------------------------------
     candidates: tuple[float, ...] = (0.025, 0.04, 0.05, 0.06, 0.075, 0.08, 0.1, 0.125, 0.15,
                                      0.175, 0.2, 0.225, 0.25, 0.275, 0.3)
@@ -41,8 +47,15 @@ class Config:
     p1_window: int = 5
     p1_floor: float = 1e-4
     p1_ceil: float = 0.99
-    # --- bookkeeping ----------------------------------------------------------
-    extra: dict = field(default_factory=dict, compare=False)
+    def __post_init__(self):
+        if self.contacts not in CONTACT_MODES:
+            raise ValueError(f"contacts must be one of {CONTACT_MODES}, got {self.contacts!r}")
+        if self.inc < 1 or self.duration < 1:
+            raise ValueError("inc and duration must be >= 1 day")
+        if self.num_sims < 1:
+            raise ValueError("num_sims must be >= 1")
+        if not self.horizons or min(self.horizons) < 1:
+            raise ValueError("horizons must be positive integers")
 
     def with_(self, **kw) -> Config:
         return replace(self, **kw)

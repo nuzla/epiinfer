@@ -45,19 +45,28 @@ BASELINES = {"arima": _arima, "holt_winters": _holt_winters}
 
 
 def rolling_baseline(data: Dataset, name: str = "arima", horizons=(1, 5, 10, 20),
-                     start_eval: int = 25, max_day: int = 100) -> pd.DataFrame:
-    """Rolling-origin RMSE / fRMSE of a baseline on the total symptomatic count."""
+                     start_eval: int = 25, max_day: int = 100,
+                     last_origin: int | None = None) -> pd.DataFrame:
+    """Rolling-origin RMSE / fRMSE of a baseline on the total symptomatic count.
+
+    The defaults match the EpiInfer evaluation (origins 25-99). The paper's ARIMA column
+    used origins 10-50 instead (``start_eval=10, last_origin=50``), which reproduces its
+    published ARIMA numbers exactly on the age-structured dataset.
+    """
     _need_statsmodels()
     fn = BASELINES[name]
     days = sorted(data.gt_total)
+    if days != list(range(days[0], days[-1] + 1)) or days[0] != 0:
+        raise ValueError("baselines need a contiguous daily series starting at day 0")
     last = min(max_day, max(days) + 1)
     y = np.array([data.gt_total[d] for d in days], float)
     preds = {h: [] for h in horizons}
     acts = {h: [] for h in horizons}
-    for day in range(start_eval, last):
+    stop = last if last_origin is None else min(last, last_origin + 1)
+    for day in range(start_eval, stop):
         fc = fn(y[:day + 1], max(horizons))
         for h in horizons:
-            if day + h < len(y):
+            if day + h <= min(max_day, len(y) - 1):      # same targets as EpiInfer
                 preds[h].append(fc[h - 1])
                 acts[h].append(y[day + h])
     return pd.DataFrame([{"method": name, "horizon": h, "n": len(preds[h]),

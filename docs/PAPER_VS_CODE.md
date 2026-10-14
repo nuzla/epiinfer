@@ -1,40 +1,123 @@
-# Paper vs. code: what is and is not pinned down
+# Paper vs. code
 
-Honest notes from porting the research scripts into this library.
+These notes come from porting the research scripts (`epiinfer_paper_aligned.py`,
+`epiinfer_empirical_p1.py`) into this library and re-running them against the 2025
+*Algorithms* proof source. Items 1–4 change how the published numbers should be read.
 
-## Two methods, two experiments
-| Paper experiment | Method here | Settings |
+## 1. The original code looked ahead at future contacts
+
+The paper says future contact data are not used. Its section "Contact Information for
+Forecasting" states that observed contact values from future days were not used. The
+`findprob` caption and the authors' notes also say to assume people meet the same people
+as on day *d*.
+
+The original scripts did use them. At forecast origin *d*, the projection for day *d + k*
+used the **recorded contact graph of day d + k**. In the AgeMixABM data that graph also
+drops anyone who is isolated (symptomatic), so it carries information about the target.
+
+The library makes this a setting, `Config.contacts` (or `--contacts`):
+
+| value | meaning | used by |
 |---|---|---|
-| AgeMixABM tables (age-structured and uniform contacts; knowledge modes *both known / p1 known / p2 known / both unknown*) | `known_both`, `known_p1`, `known_p2`, `unknown_both` | grid search over p1/p2, inc=7, duration=7 |
-| OpenABM table | `empirical_p1` | p2=1, p1 refit daily from the last 5 days of S→A events, inc=5, duration=11 |
+| `frozen` | every day after the origin reuses the origin day's graph (no look-ahead) | `run`, `forecast` (default) |
+| `recorded` | each future day's recorded graph, as the original scripts did | `reproduce` (default, to match the published numbers) |
 
-Naming: the paper labels a mode by the parameter that is *known*. `known_p1` = p1 given,
-p2 estimated. `known_p2` = p2 given, p1 estimated.
+Measured effect (seed 0) is small, and it does not always go in the same direction. See
+`REPRODUCING.md` for the full table.
 
-## Things the paper does not state (this library chose, and documents, a value)
-* **Random seeds** — none stated. The library takes `--seed`; every (seed, origin day,
-  trajectory) uses its own RNG stream, so results do not depend on thread count.
-* **Calibration grid and window** — the code uses a 15-value grid (0.025 … 0.3), a 20-day
-  scoring window and smoothing 0.5; the paper text gives p ∈ [0.05, 0.30] and λ = 0.01
-  "slow learning". The library follows the **code** that produced the tables.
-* **Holt-Winters / LSTM settings** — only in commented-out text. `baselines.py` uses ARIMA(1,1,1)
-  and additive damped Holt-Winters; LSTM is not implemented. Quote the paper's LSTM numbers.
-* **Hardware, Python version** — not stated. Tested here on Python 3.13.
+| Data | Horizon | recorded | frozen |
+|---|---|---|---|
+| OpenABM, ALL | day 10 / 20 | 418.1 / 957.7 | 427.3 / 979.3 |
+| age-structured, both known | day 5 / 20 | 17.9 / 158.0 | 18.2 / 126.3 |
 
-## Inconsistencies spotted in the source (not edited)
-* population 2,000 in one place, 10,000 in another;
-* ARIMA shown as "--" in Tables 5-8 but given in the absolute-RMSE table;
-* the prose says EpiInfer-contact beats every baseline at every horizon; several table cells
-  say otherwise (e.g. age-structured day 20, and OpenABM day 10/20 vs the previous method);
-* Table 1 (age-specific, day 1: 7.92) matches none of the summary-table rows (8.50–8.77),
-  so it is not used as a reproduction target;
-* `tab:openabm-forecast` carries an unresolved note "need to compare with ARIMA".
+`forecast()` never uses contacts after its origin, whatever `contacts` is set to.
 
-## Data
-* The ABM generator in this library is the same model as the paper's notebook but a
-  vectorised port with a different random stream, so a regenerated dataset is statistically
-  equivalent, **not** byte-identical, to the paper's. Use the archived datasets
-  (`epiinfer fetch-data`) for exact reproduction.
-* In the shipped age-structured folder, `daily_group_avg_contacts.csv` disagrees with the
-  degrees computed from `timed_edges.csv` (day 1: 9.8/8.0/4.8 vs 5.3/4.2/3.4 contacts per
-  person). The loader warns about this; it does not change the forecasts.
+## 2. The model is handed the true pre-symptomatic (A) people
+
+Algorithm 2 needs the people who were recently exposed. The paper estimates them from the
+infected set: it assumes |Infected(d)|/p2 people were exposed at day d − inc, drawn in
+proportion to their contact counts.
+
+The research code skips that step. It reads who was in **A** straight from the simulator's
+per-person states. Its own docstring calls this "a known simplification". All published
+EpiInfer-contact numbers, and this library, depend on that oracle input.
+
+**Consequence for real data.** Real contact-tracing data rarely says who is infected but
+not yet symptomatic. To use the library you must supply state 1 (A) in
+`individual_day_state.csv`. The paper's reconstruction is not implemented here (see
+"Open items").
+
+## 3. The baselines were evaluated on a different window
+
+The paper's ARIMA(1,1,1) column reproduces **exactly** (30.12 / 279.61 / 474.93 / 833.68).
+It does so only with forecast origins **10–50**, which is what the authors' ARIMA notebook
+uses. EpiInfer-contact is scored on origins **25–99**. The early growth phase is far
+harder to forecast, so the two columns are not comparable.
+
+On the same 25–99 window, ARIMA scores 20.0 / 85.4 / 97.7 / 111.8. At day 20 that beats
+EpiInfer-contact's 156.9 (paper) / 158.0 (this library).
+
+- `epiinfer reproduce --table arima_age_structured` reproduces the paper's ARIMA column.
+- `epiinfer baseline --which arima` gives ARIMA on the EpiInfer window.
+
+The Holt-Winters column (83.42 / 140.65 / …) is **not** reproduced by additive
+damped-trend smoothing on either window. Its settings appear only in commented-out text.
+
+## 4. The estimated-rate rows are not reproduced by any version of the code
+
+In `tab:age_structured` the four knowledge modes are within about 3% of each other at
+every horizon. For example, day 20 ranges from 156.5 to 158.6, so estimating p1 and p2
+apparently cost nothing.
+
+| Code | both known | p1 known | p2 known | both unknown (day 5) |
+|---|---|---|---|---|
+| paper | 17.49 | 17.28 | 18.18 | 17.79 |
+| current code (this library) | 17.87 | 52.23 | 17.60 | 31.29 |
+| July 2026 script (true-value start, one-day scoring, damping 0.01) | 17.58 | 30.15 | 18.30 | 31.39 |
+
+Run-to-run noise is about 5% (seeds 0–2), so these gaps are systematic. The pattern fits
+the estimated rates having stayed at the true values. That cannot be confirmed from the
+material supplied.
+
+## 5. Smaller differences
+
+- **Scoring a day that does not exist.** The research code scored the day after the data
+  ends against an actual of 0 (`gt.get(day, 0)`). That is OpenABM day 100, which has no
+  record. The library skips such targets. This moves the OpenABM ratios from 1.000 to about
+  1.008.
+- **Naming.** The paper labels a mode by the parameter that is *known*:
+  - `known_p1` means p1 is given and p2 is estimated.
+  - `known_p2` means p2 is given and p1 is estimated.
+- **Calibration settings.** The text gives a grid of [0.05, 0.30] and λ = 0.01. The code
+  that produced the tables uses a 15-value grid (0.025 … 0.3), a 20-day scoring window
+  and smoothing 0.5. The library follows the **code**.
+- **Not stated in the paper:** random seeds, number of runs, hardware, and Python version.
+  The library takes `--seed`. Every (seed, origin, trajectory) gets its own RNG stream, so
+  results do not depend on `--workers` or `--jobs`.
+- **Contacts reference file.** In the shipped age-structured folder,
+  `daily_group_avg_contacts.csv` disagrees with `timed_edges.csv`. Day-1 contacts per
+  person are 9.8 / 8.0 / 4.8 in the edges against 5.3 / 4.2 / 3.4 in the file. The loader
+  warns about this, and it does not affect forecasts.
+- **Group file.** `daily_group_infected.csv` omits zero counts. The loader fills them in
+  as zeros.
+
+## Inconsistencies in the paper text (not edited)
+
+- The population is given as 2,000 in one place and 10,000 in another.
+- ARIMA is shown as "--" in Tables 5–8 but is given in the absolute-RMSE table.
+- The prose says EpiInfer-contact beats every baseline at every horizon. Several table
+  cells contradict this, as do the like-for-like ARIMA window in item 3 and the OpenABM
+  results at days 10 and 20 against the previous method.
+- Table 1's day-1 value of 7.92 matches none of the summary-table rows (8.50–8.77).
+- `tab:openabm-forecast` still carries the note "need to compare with ARIMA".
+- The uniform-contact table (`tab:uniform`) cannot be checked because its dataset was not
+  supplied. Freshly simulated uniform data gives very different day-1 errors (10.4 against
+  the paper's 74.3). The paper's day-1 ARIMA error for uniform (149.5, against 30.1
+  age-structured) also points to a noisier dataset than the documented settings produce.
+
+## Open items
+
+- Implement the paper's reconstruction of the exposed set from infections (item 2), so
+  that the method runs on data without the A state.
+- The authors should confirm which configuration produced the estimated-rate rows (item 4)
+  and the Holt-Winters column.

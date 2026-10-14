@@ -25,11 +25,22 @@ MUTATIONS = [
      '"diff")\n    n = model.n_groups'),
     ("data.py", "asymp_on[day] & susceptible_on.get(day - 1, set())",
      "asymp_on[day] - asymp_on.get(day - 1, set())"),
-    ("data.py", "if int(df_status[\"id\"].max()) >= pop_total:", "if False:"),
+    ("data.py", "if lo < 0 or hi >= pop_total:", "if False:"),
     ("data.py", "if s_code != 0:", "if False:"),
     ("metrics.py", "return math.sqrt(np.mean((pred - actual) ** 2)) / denom",
      "return math.sqrt(np.mean((pred - actual) ** 2)) / actual.max()"),
     ("simulate/abm.py", "not_inf[core_i] & not_inf[core_j]", "np.ones(core_i.size, bool)"),
+    # added in the full review
+    ("forecast.py", 'return origin if cfg.contacts == "frozen" else None', "return None"),
+    ("forecast.py", "sim_rng(cfg.seed, day, i), graph_until=day)", "sim_rng(cfg.seed, day, i))"),
+    ("forecast.py", "if tgt not in avg or tgt > last_day:", "if tgt not in avg:"),
+    ("forecast.py", "return max(8, model.inc + 1, model.duration + 1)", "return 8"),
+    ("data.py", "codes[key] = 0", "pass"),
+    ("data.py", "gt_group[g].setdefault(day, 0)", "pass"),
+    ("data.py", 'next((c for c in ("c", "avg_contacts")', 'next((c for c in ("c",)'),
+    ("fetch.py", ".is_relative_to(root)", ".as_posix().startswith(str(root))"),
+    ("core.py", "int(n_groups) if n_groups is not None else", "int(self.age_of.max()) + 1 if True else"),
+    ("baselines.py", "if day + h <= min(max_day, len(y) - 1):", "if day + h < len(y):"),
 ]
 
 
