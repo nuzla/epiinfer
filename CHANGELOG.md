@@ -19,4 +19,5 @@ First packaged version of the EpiInfer-CONTACT research code.
 - **Packaging.** Managed with uv; `uv.lock` pins every dependency. Python 3.11–3.14 are
   supported, and the minimum dependency versions are tested in CI.
 - **Docker.** The image installs the locked versions and runs as a non-root user.
+- MIT licence.
 - Differences from the paper are documented in `docs/PAPER_VS_CODE.md`.

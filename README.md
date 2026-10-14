@@ -139,4 +139,4 @@ the demo data, plus the authors' own Holt-Winters notebook code. It was recorded
 ## Citation
 
 See `CITATION.cff`. If you use its data, please also cite OpenABM-Covid19 (Hinch et al.).
-The authors have not yet chosen a licence; it must be decided before public release.
+Released under the [MIT licence](LICENSE).
