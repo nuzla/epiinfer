@@ -8,7 +8,11 @@ from .forecast import ForecastResult
 
 
 def plot_forecast(result: ForecastResult, out_dir: str | Path) -> Path:
-    import matplotlib
+    try:
+        import matplotlib
+    except ImportError as exc:
+        raise ImportError("plots need matplotlib: install the extra, e.g. "
+                          "`uv sync --extra plots` or `pip install 'epiinfer[plots]'`") from exc
     matplotlib.use("Agg")
     import matplotlib.pyplot as plt
 

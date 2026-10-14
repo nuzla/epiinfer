@@ -91,3 +91,14 @@ def test_empirical_projection_matches_original(data, golden):
     out = model.project(p1, np.ones(3), h_a, h_i, day, day + 12, data.recovered_on.get(day, set()),
                         np.random.RandomState(g["seed"]))
     assert {str(d): v.tolist() for d, v in sorted(out.items())} == g["counts"]
+
+
+def test_holt_winters_matches_authors_notebook(data, golden):
+    """Same RMSE as the authors' own HW code (baselines_standalone.ipynb) on the demo data."""
+    pytest.importorskip("statsmodels")
+    from epiinfer.baselines import rolling_baseline
+    df = rolling_baseline(data, "holt_winters", horizons=(1, 5, 10, 20))
+    got = {str(h): r for h, r in zip(df["horizon"], df["rmse"])}
+    assert got.keys() == golden["holt_winters_notebook"].keys()
+    for h, want in golden["holt_winters_notebook"].items():
+        assert got[h] == pytest.approx(want, rel=1e-9, abs=0), h

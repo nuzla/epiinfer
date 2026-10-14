@@ -14,16 +14,29 @@ people, per age group and in total.
 
 ## Install
 
-The package is not on PyPI yet, so install it from a checkout:
+The project is managed with [uv](https://docs.astral.sh/uv/). `uv.lock` pins every
+dependency, so everyone gets the same numerical stack. The package is not on PyPI yet;
+from a checkout:
 
 ```bash
-pip install -e ".[all]"        # numpy, pandas + matplotlib (plots), statsmodels (baselines)
-pip install -e ".[dev]"        # + pytest, ruff, build
+uv sync --all-extras                   # .venv with the locked versions + plots + baselines
+uv run epiinfer --help                 # run any command inside that environment
 ```
 
-It is tested on Python 3.10–3.14, and with the minimum versions numpy 1.24 and pandas 2.0.
+Other routes:
 
-Docker needs no Python on the host:
+- **Base install.** `uv sync` gives numpy and pandas only. Add `--extra plots` or
+  `--extra baselines` for the extras.
+- **Command on your PATH.** `uv tool install ".[all]"` installs the `epiinfer` command.
+- **pip.** `pip install ".[all]"` works too, but it resolves fresh versions instead of the
+  locked ones.
+
+It is tested on Python 3.11–3.14 (`.python-version` picks 3.13 by default). The oldest
+supported dependencies are also tested: numpy 1.26, pandas 2.0, statsmodels 0.14 and
+scipy 1.16. Python 3.10 is not supported: it reaches end of life in October 2026, and no
+scipy build for it loads on current macOS.
+
+Docker needs no Python on the host. The image installs the exact locked versions through uv:
 
 ```bash
 docker build -f docker/Dockerfile -t epiinfer .
@@ -36,9 +49,9 @@ docker run --rm --user "$(id -u):$(id -g)" \
 ## 60-second tour
 
 ```bash
-epiinfer demo                                          # path to a tiny bundled dataset
-epiinfer forecast --data "$(epiinfer demo)" --horizon 14
-epiinfer run --data "$(epiinfer demo)" --method unknown_both --start-eval 30 --plots
+uv run epiinfer demo                                   # path to a tiny bundled dataset
+uv run epiinfer forecast --data "$(uv run epiinfer demo)" --horizon 14
+uv run epiinfer run --data "$(uv run epiinfer demo)" --method unknown_both --start-eval 30 --plots
 ```
 
 ```python
@@ -57,22 +70,29 @@ is pre-symptomatic, and real contact-tracing data usually do not record that.
 
 | Paper table | Command | Agreement |
 |---|---|---|
-| `tab:openabm-forecast` | `epiinfer reproduce --table openabm --data DIR` | within 1% |
-| `tab:age_structured`, both known | `epiinfer reproduce --table age_structured --data DIR` | within 10% |
+| `tab:openabm-forecast` | `uv run epiinfer reproduce --table openabm --data DIR` | within 1% |
+| `tab:age_structured`, both known | `uv run epiinfer reproduce --table age_structured --data DIR` | within 10% |
 | `tab:age_structured`, other modes | (same command) | **not reproduced** |
-| ARIMA column, age-structured | `epiinfer reproduce --table arima_age_structured --data DIR` | exact |
-| `tab:uniform` | `epiinfer reproduce --table uniform --data DIR` | dataset not supplied |
+| ARIMA column, age-structured | `uv run epiinfer reproduce --table arima_age_structured --data DIR` | exact |
+| Holt-Winters columns | `uv run epiinfer reproduce --table hw_age_structured --data DIR` | dataset not supplied |
+| `tab:uniform` | `uv run epiinfer reproduce --table uniform --data DIR` | dataset not supplied |
 
-Exact datasets come from release assets (`epiinfer fetch-data --url … --sha256 …`).
-Statistically equivalent data can be generated with `epiinfer simulate`. The steps,
-runtimes and full results are in [docs/REPRODUCING.md](docs/REPRODUCING.md).
+**Getting the data.** The exact datasets are release assets: `epiinfer fetch-data --url …`
+downloads one and checks it against the SHA-256 hashes shipped in the package.
+`epiinfer simulate` generates statistically equivalent data instead.
+
+**Wrong-data check.** Every `reproduce` run checks that it was given the dataset the paper
+used, by population, number of days and peak. It warns if not.
+
+The steps, runtimes and full results are in [docs/REPRODUCING.md](docs/REPRODUCING.md).
 
 Read [docs/PAPER_VS_CODE.md](docs/PAPER_VS_CODE.md) before relying on the published
-comparisons. It covers four points:
+comparisons. It covers five points:
 
 - the original code looked ahead at future contacts;
 - it was given the true pre-symptomatic people;
 - ARIMA was scored on a different, harder window;
+- the Holt-Winters and LSTM columns came from a different simulated epidemic;
 - the estimated-rate rows match no version of the code.
 
 ## Methods
@@ -87,8 +107,8 @@ comparisons. It covers four points:
 The default timing (`inc`, `duration`) is 7/7 days for the grid methods and 5/11 for
 `empirical_p1`. Override it for your disease.
 
-ARIMA and Holt-Winters baselines need the `baselines` extra:
-`epiinfer baseline --data DIR --which arima`.
+ARIMA and Holt-Winters baselines follow the authors' notebooks and need the `baselines`
+extra: `uv run epiinfer baseline --data DIR --which arima`.
 
 ## Reproducibility
 
@@ -100,14 +120,21 @@ ARIMA and Holt-Winters baselines need the `baselines` extra:
 ## Development
 
 ```bash
-pytest -q                                        # unit, golden and regression tests
-EPIINFER_PAPER_DATA=/path/to/data pytest -m paper   # checks against the paper's datasets
-python tools/mutation_check.py                   # breaks 23 guards in a copy; all must be caught
-ruff check .
+uv run --all-extras pytest -q                        # unit, golden and regression tests
+EPIINFER_PAPER_DATA=/path/to/data uv run --all-extras pytest -m paper  # vs the paper's data
+uv run --all-extras python tools/mutation_check.py   # breaks 28 guards; all must be caught
+uv run ruff check .
+uv lock --check                                      # uv.lock matches pyproject.toml
+uv build                                             # sdist + wheel
 ```
 
-`tests/golden_original_scripts.json` holds outputs of the original research scripts on the
-demo data, recorded by `tools/make_golden.py`. The package must match them exactly.
+`uv run` keeps `.venv` in sync with `uv.lock`. Pass the same `--all-extras` every time,
+otherwise it removes the extras. To upgrade the locked versions, run
+`uv lock --upgrade && uv run --all-extras pytest`.
+
+`tests/golden_original_scripts.json` holds the outputs of the original research scripts on
+the demo data, plus the authors' own Holt-Winters notebook code. It was recorded by
+`tools/make_golden.py`, and the package must match it exactly.
 
 ## Citation
 

@@ -15,14 +15,33 @@ from .targets import TABLES
 log = logging.getLogger("epiinfer")
 
 
+def fingerprint(data) -> tuple[int, int, int]:
+    """(people, days, peak symptomatic count): enough to tell the paper's datasets apart."""
+    return (data.population_total, len(data.all_days), int(max(data.gt_total.values())))
+
+
+def check_dataset(table: str, data) -> str:
+    """'ok', 'unknown' (no reference recorded) or a description of the mismatch."""
+    want = TABLES[table].get("fingerprint")
+    if want is None:
+        return "unknown"
+    got = fingerprint(data)
+    if got == want:
+        return "ok"
+    return (f"MISMATCH: data has {got[0]} people, {got[1]} days, peak I {got[2]}; the paper's "
+            f"{table} data has {want[0]}, {want[1]}, {want[2]}")
+
+
 def _run_method(table: str, data_dir: str, method: str, overrides: dict) -> list[dict]:
     spec = TABLES[table]
     data = load_dataset(data_dir)
+    dataset_check = check_dataset(table, data)
     if "baseline_window" in spec:                      # statistical baseline, own window
         from ..baselines import rolling_baseline
         first, last = spec["baseline_window"]
         horizons = overrides["horizons"]
-        summ = rolling_baseline(data, method, horizons, start_eval=first, last_origin=last)
+        summ = rolling_baseline(data, method, horizons, start_eval=first, last_origin=last,
+                                max_day=last + max(horizons))
         summ = summ.assign(group="ALL")
         contacts = "n/a"
     else:
@@ -42,7 +61,8 @@ def _run_method(table: str, data_dir: str, method: str, overrides: dict) -> list
         rows.append({"table": spec["caption"], "method": method, "horizon": h,
                      "contacts": contacts, "paper_rmse": paper[0], "rmse": rmse,
                      "rmse_ratio": rmse / paper[0] if paper[0] == paper[0] else float("nan"),
-                     "paper_frmse": paper[1], "frmse": frmse, "n_origins": int(s["n"].iloc[0])})
+                     "paper_frmse": paper[1], "frmse": frmse, "n_origins": int(s["n"].iloc[0]),
+                     "dataset_check": dataset_check})
     return rows
 
 
@@ -57,7 +77,8 @@ def reproduce_table(table: str, data_dir: str | Path, quick: bool = False, seed:
     which used each future day's recorded contacts; ``"frozen"`` removes that look-ahead.
     ``quick`` shortens the evaluation (origins 30..50, 3 sims) to a smoke test; its numbers
     are NOT comparable with the paper. ``jobs`` > 1 runs the methods in parallel processes
-    (results are identical to ``jobs=1``).
+    (results are identical to ``jobs=1``). The ``dataset_check`` column says whether
+    ``data_dir`` is the dataset the paper's numbers were computed on.
     """
     if table not in TABLES:
         raise ValueError(f"unknown table {table!r}; choose from {sorted(TABLES)}")

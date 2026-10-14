@@ -1,8 +1,10 @@
 .venv
 runs
 results
+dist
 data/*/
 **/__pycache__
 .git
 *.egg-info
-dist
+.pytest_cache
+.ruff_cache

@@ -1,8 +1,9 @@
 """Download and verify dataset archives (the paper's exact datasets, hosted as release assets).
 
-The hosting location is not baked in: pass ``--url`` or set ``EPIINFER_DATA_URL``. Pass
-the archive's SHA-256 (published in the release's ``checksums.txt``) to verify the download;
-without it the hash is printed so you can compare it yourself.
+The hosting location is not baked in: pass ``--url`` or set ``EPIINFER_DATA_URL``. The
+download is verified against ``--sha256`` if given, otherwise against the published hash
+of that archive name in ``checksums.txt`` (shipped with the package). Archives with no
+known hash are unpacked with a warning that prints their hash.
 """
 
 from __future__ import annotations
@@ -23,6 +24,19 @@ def sha256(path: str | Path) -> str:
     return h.hexdigest()
 
 
+def known_checksums() -> dict[str, str]:
+    """{archive file name: sha256} for the published dataset archives."""
+    path = Path(__file__).with_name("checksums.txt")
+    out = {}
+    if path.exists():
+        for line in path.read_text().splitlines():
+            line = line.split("#", 1)[0].strip()
+            if line:
+                digest, name = line.split()
+                out[name] = digest.lower()
+    return out
+
+
 def fetch(url: str | None, dest: str | Path, expected_sha256: str | None = None) -> Path:
     """Download ``url`` to ``dest`` and unzip it; refuse to unpack on a checksum mismatch."""
     url = url or os.environ.get("EPIINFER_DATA_URL")
@@ -36,6 +50,7 @@ def fetch(url: str | None, dest: str | Path, expected_sha256: str | None = None)
     dest = Path(dest)
     dest.mkdir(parents=True, exist_ok=True)
     archive = dest / (Path(parsed.path).name or "data.zip")
+    expected_sha256 = expected_sha256 or known_checksums().get(archive.name)
     urllib.request.urlretrieve(url, archive)  # noqa: S310 - scheme checked above
     got = sha256(archive)
     if expected_sha256 and got.lower() != expected_sha256.lower():

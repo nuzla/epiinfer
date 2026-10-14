@@ -6,12 +6,16 @@
 Release:
 
 ```bash
-epiinfer fetch-data --url https://…/epiinfer-data-openabm.zip --sha256 <hash> --dest data
+uv run epiinfer fetch-data --url https://…/epiinfer-data-openabm.zip --dest data
 ```
 
-`tools/pack_datasets.py` builds these zips and their `checksums.txt` from the dataset
-folders. The URL is not hard-coded; set `EPIINFER_DATA_URL` if you prefer an environment
-variable. The folders used below are:
+- **Verification.** The download is checked against the SHA-256 recorded in
+  `src/epiinfer/checksums.txt`, which ships with the package. A modified or corrupted
+  archive is refused before it is unpacked.
+- **Building the archives.** `tools/pack_datasets.py` builds the zips deterministically:
+  re-packing the same data gives the same hash.
+- **URL.** It is not hard-coded until the repository location is chosen; set
+  `EPIINFER_DATA_URL` if you prefer an environment variable. The folders used below are:
 
 - `age_structured`: AgeMixABM with age-structured contacts, 10,000 people, days 0–100.
 - `openabm`: OpenABM-Covid19, 10,000 people, days 0–99.
@@ -19,8 +23,8 @@ variable. The folders used below are:
 **Regenerated data.** This is statistically equivalent but not byte-identical:
 
 ```bash
-epiinfer simulate --contact age_structured --out data/sim_age_structured
-epiinfer simulate --contact uniform        --out data/sim_uniform
+uv run epiinfer simulate --contact age_structured --out data/sim_age_structured
+uv run epiinfer simulate --contact uniform        --out data/sim_uniform
 ```
 
 The defaults (contact matrix × 0.2, seed 123) match the shipped age-structured dataset:
@@ -38,13 +42,25 @@ Use the archived data to check the published numbers.
 ## 2. Run a table
 
 ```bash
-epiinfer reproduce --table openabm              --data data/openabm
-epiinfer reproduce --table age_structured       --data data/age_structured --jobs 4
-epiinfer reproduce --table arima_age_structured --data data/age_structured
+uv sync --all-extras
+uv run epiinfer reproduce --table openabm              --data data/openabm
+uv run epiinfer reproduce --table age_structured       --data data/age_structured --jobs 4
+uv run epiinfer reproduce --table arima_age_structured --data data/age_structured
 ```
 
 Each run writes a CSV and prints a comparison. Its columns are `paper_rmse`, `rmse`,
 `rmse_ratio`, `paper_frmse`, `frmse` and `n_origins`.
+
+The CSV also has `dataset_check`, which identifies the data by population, number of days
+and peak symptomatic count:
+
+| Data | Population | Days | Peak |
+|---|---|---|---|
+| Archived age-structured | 10,000 | 101 | 915 |
+| OpenABM | 10,000 | 100 | 2,704 |
+
+A different dataset prints a **WARNING: MISMATCH** instead of quietly giving different
+numbers.
 
 - **Contacts.** `--contacts recorded` is the default here. It uses each future day's
   recorded contacts, which is how the published numbers were made. `--contacts frozen`
@@ -53,8 +69,8 @@ Each run writes a CSV and prints a comparison. Its columns are `paper_rmse`, `rm
   ARIMA table uses origins 10–50, matching the authors' ARIMA notebook.
 - **Smoke test.** `--quick` runs a reduced evaluation only. Its numbers are not comparable
   with the paper.
-- **Tests.** `EPIINFER_PAPER_DATA=data pytest -m paper` checks the reproducible rows
-  automatically, in about one minute.
+- **Tests.** `EPIINFER_PAPER_DATA=data uv run --all-extras pytest -m paper` checks the
+  reproducible rows automatically, in about one minute.
 
 Runtimes were measured on an Apple-silicon Mac, single-threaded per method:
 
@@ -109,12 +125,23 @@ See `PAPER_VS_CODE.md`, item 4.
 The paper's column **reproduces exactly**, but only on its own window. See
 `PAPER_VS_CODE.md`, item 3.
 
+### Holt-Winters (`hw_age_structured`, `hw_uniform`)
+
+The library's Holt-Winters is the authors' own notebook code: additive damped trend, a
+14-day trailing window, origins 25–99, and forecasts clipped at 0. Run on the demo data it
+gives the same RMSE as that code, to 1e-9 (`tests/test_golden.py`).
+
+The paper's Holt-Winters column cannot be checked here. The notebook's saved output shows
+it was computed on a different simulated epidemic (`abmcontact10000aprilnewage`, peak 1,044
+age-structured and 1,012 uniform). That dataset was not supplied. On the archived data
+(peak 915) the same code gives 23.3 / 76.3 / 89.0 / 111.7, against the published
+83.4 / 140.7 / 179.1 / 261.0. See `PAPER_VS_CODE.md`, item 5.
+
 ### Not checked
 
 - **`tab:uniform`.** The uniform-contact dataset was not supplied.
-- **Holt-Winters.** The settings are unknown, and the standard damped-trend model gives
-  different numbers.
-- **LSTM.** Not implemented.
+- **LSTM.** Not implemented. The authors' Keras model is trained without a seed, and it
+  also used the April dataset.
 - **Parameter-sweep tables 9–12 and Appendix A.** Their datasets were not supplied.
   `epiinfer simulate --p1 … --p2 …` can generate equivalents.
 

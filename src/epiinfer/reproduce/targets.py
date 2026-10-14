@@ -51,21 +51,46 @@ ARIMA_AGE_STRUCTURED = {("arima", 1): (30.12, None), ("arima", 5): (279.61, None
 ARIMA_UNIFORM = {("arima", 1): (149.53, None), ("arima", 5): (501.66, None),
                  ("arima", 10): (730.34, None), ("arima", 20): (984.59, None)}
 
+#: Holt-Winters columns. The authors' notebook output (baselines_standalone.ipynb) shows
+#: these were computed on a DIFFERENT simulated epidemic ("abmcontact10000aprilnewage",
+#: peak I 1044 age-structured / 1012 uniform) from the one EpiInfer-contact and ARIMA were
+#: scored on (peak I 915). Run these tables only on that dataset.
+HW_AGE_STRUCTURED = {("holt_winters", 1): (83.42, None), ("holt_winters", 5): (140.65, None),
+                     ("holt_winters", 10): (179.05, None), ("holt_winters", 20): (260.96, None)}
+HW_UNIFORM = {("holt_winters", 1): (90.51, None), ("holt_winters", 5): (139.44, None),
+              ("holt_winters", 10): (177.95, None), ("holt_winters", 20): (260.39, None)}
+
+#: Identity of the dataset each table was computed on: (people, days, peak I).
+#: ``reproduce`` warns when the supplied folder does not match.
+FINGERPRINT_AGE = (10000, 101, 915)          # archived age_structured (EpiInfer + ARIMA)
+FINGERPRINT_OPENABM = (10000, 100, 2704)
+FINGERPRINT_APRIL_AGE = (10000, 101, 1044)   # HW / LSTM columns (dataset not supplied)
+FINGERPRINT_APRIL_UNIFORM = (10000, 101, 1012)
+
 TABLES = {
-    "age_structured": {"targets": AGE_STRUCTURED, "group": "ALL",
+    "age_structured": {"targets": AGE_STRUCTURED, "group": "ALL", "fingerprint": FINGERPRINT_AGE,
                        "methods": ("known_both", "known_p1", "known_p2", "unknown_both"),
                        "default_data": "age_structured", "caption": "tab:age_structured"},
     "uniform": {"targets": UNIFORM, "group": "ALL",
                 "methods": ("known_both", "known_p1", "known_p2", "unknown_both"),
                 "default_data": "uniform", "caption": "tab:uniform"},
     "openabm": {"targets": OPENABM, "group": "ALL", "methods": ("empirical_p1",),
+                "fingerprint": FINGERPRINT_OPENABM,
                 "default_data": "openabm", "caption": "tab:openabm-forecast"},
     "arima_age_structured": {"targets": ARIMA_AGE_STRUCTURED, "group": "ALL",
+                             "fingerprint": FINGERPRINT_AGE,
                              "methods": ("arima",), "baseline_window": (10, 50),
                              "default_data": "age_structured", "caption": "tab:baseline-abs"},
     "arima_uniform": {"targets": ARIMA_UNIFORM, "group": "ALL", "methods": ("arima",),
                       "baseline_window": (10, 50), "default_data": "uniform",
                       "caption": "tab:baseline-abs"},
+    "hw_age_structured": {"targets": HW_AGE_STRUCTURED, "group": "ALL",
+                          "methods": ("holt_winters",), "baseline_window": (25, 99),
+                          "fingerprint": FINGERPRINT_APRIL_AGE, "default_data": "april/age_structured",
+                          "caption": "tab:age_specific_day*"},
+    "hw_uniform": {"targets": HW_UNIFORM, "group": "ALL", "methods": ("holt_winters",),
+                   "baseline_window": (25, 99), "fingerprint": FINGERPRINT_APRIL_UNIFORM,
+                   "default_data": "april/uniform", "caption": "tab:uniform_day*"},
 }
 
 # NB: the paper labels rows by the parameter that is KNOWN ("p1 known" = p1 given, p2

@@ -152,11 +152,29 @@ def test_history_covers_long_incubation(data):
 def test_cli_run_accepts_timing_and_horizons(tmp_path, demo_path):
     rc = main(["run", "--data", str(demo_path), "--method", "empirical_p1", "--inc", "6",
                "--duration", "9", "--horizons", "2", "--start-eval", "30", "--max-day", "33",
-               "--num-sims", "2", "--out", str(tmp_path), "--plots"])
+               "--num-sims", "2", "--out", str(tmp_path)])
     assert rc == 0
     summ = pd.read_csv(tmp_path / "summary_demo_data_empirical_p1.csv")
     assert set(summ["horizon"]) == {2}
-    assert (tmp_path / "forecast_demo_data_empirical_p1.png").exists()
+
+
+def test_cli_plots(tmp_path, demo_path):
+    pytest.importorskip("matplotlib")
+    rc = main(["run", "--data", str(demo_path), "--method", "empirical_p1", "--start-eval", "40",
+               "--num-sims", "2", "--out", str(tmp_path), "--plots"])
+    assert rc == 0 and (tmp_path / "forecast_demo_data_empirical_p1.png").exists()
+
+
+def test_missing_optional_extra_gives_install_hint(tmp_path, demo_path, monkeypatch):
+    """A base install used to crash with a bare ModuleNotFoundError on --plots."""
+    import sys
+    monkeypatch.setitem(sys.modules, "matplotlib", None)       # import -> ImportError
+    with pytest.raises(SystemExit, match="epiinfer\\[plots\\]"):
+        main(["run", "--data", str(demo_path), "--method", "empirical_p1", "--start-eval", "44",
+              "--num-sims", "1", "--out", str(tmp_path), "--plots"])
+    monkeypatch.setitem(sys.modules, "statsmodels", None)
+    with pytest.raises(SystemExit, match="epiinfer\\[baselines\\]"):
+        main(["baseline", "--data", str(demo_path)])
 
 
 def test_cli_simulate_per_group_rates(tmp_path):
@@ -241,3 +259,44 @@ def test_string_age_labels_in_individual_file(tmp_path, demo_path):
     m.to_csv(d / "individual_age_group.csv", index=False)
     with pytest.raises(DataFormatError, match="elderly"):
         load_dataset(d)
+
+
+def test_reproduce_flags_wrong_dataset(tmp_path, demo_path, capsys):
+    """Running a table on the wrong data must say so instead of printing a silent mismatch."""
+    from epiinfer.reproduce import reproduce_table
+    from epiinfer.reproduce.run import check_dataset, fingerprint
+    data = load_dataset(demo_path)
+    assert fingerprint(data) == (600, 46, int(max(data.gt_total.values())))
+    assert check_dataset("openabm", data).startswith("MISMATCH")
+    df = reproduce_table("openabm", demo_path, quick=True)
+    assert df["dataset_check"].str.startswith("MISMATCH").all()
+    assert main(["reproduce", "--table", "openabm", "--data", str(demo_path), "--quick",
+                 "--out", str(tmp_path)]) == 0
+    assert "WARNING: MISMATCH" in capsys.readouterr().out
+
+
+def test_hw_table_runs(demo_path):
+    pytest.importorskip("statsmodels")
+    from epiinfer.reproduce import reproduce_table
+    df = reproduce_table("hw_age_structured", demo_path)
+    assert list(df["horizon"]) == [1, 5, 10, 20] and df["rmse"].notna().all()
+
+
+def test_holt_winters_clips_and_falls_back():
+    """As in the authors' notebook: forecasts never go below 0, and with fewer than 5 points
+    the last value is carried forward."""
+    pytest.importorskip("statsmodels")
+    import warnings
+
+    from statsmodels.tsa.holtwinters import ExponentialSmoothing
+
+    from epiinfer.baselines import _holt_winters
+    y = np.array([400, 330, 260, 190, 120, 60, 25, 8], float)          # collapsing epidemic
+    with warnings.catch_warnings():
+        warnings.simplefilter("ignore")
+        raw = ExponentialSmoothing(y, trend="add", damped_trend=True,
+                                   initialization_method="estimated").fit().forecast(10)
+    assert (np.asarray(raw) < 0).any()                 # the clip has something to do
+    fc = _holt_winters(y, 10)
+    assert (fc >= 0).all() and (fc == 0).any()
+    assert (_holt_winters(np.array([5.0, 7.0, 9.0]), 3) == 9.0).all()

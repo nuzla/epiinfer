@@ -2,7 +2,8 @@
 
 Run once (and again only if the demo data changes):
 
-    python tools/make_golden.py /path/to/epiinfer  tests/golden_original_scripts.json
+    uv run --all-extras python tools/make_golden.py /path/to/epiinfer tests/golden_original_scripts.json \
+        [/path/to/baselines_standalone.ipynb]
 
 The library's tests then assert that the refactored package reproduces these numbers
 exactly, so the refactor is provably behaviour-preserving. Needs only numpy + pandas +
@@ -34,7 +35,22 @@ def counts(d):
     return {str(k): sorted(int(x) for x in v) for k, v in sorted(d.items())}
 
 
-def main(old_dir: str, out: str) -> None:
+def holt_winters_from_notebook(notebook: str, gt: dict) -> dict:
+    """Run the authors' own Holt-Winters code (cell 2 of baselines_standalone.ipynb) on
+    ``gt`` and return RMSE per horizon, so the library's port can be checked against it."""
+    import pandas as pd
+    nb = json.loads(Path(notebook).read_text())
+    cell = next("".join(c["source"]) for c in nb["cells"]
+                if c["cell_type"] == "code" and "def run_holt_winters" in "".join(c["source"]))
+    ns = {"np": np, "pd": pd, "START_DAY": 25, "END_DAY": 100, "HORIZONS": [1, 5, 10, 20],
+          "CALIB_WINDOW": 14}
+    exec(cell, ns)                                   # defines _holt_forecast, run_holt_winters
+    df = ns["run_holt_winters"](0, 0, gt)
+    return {str(h): float(np.sqrt(((s.predicted - s.actual) ** 2).mean()))
+            for h, s in df.groupby("horizon")}
+
+
+def main(old_dir: str, out: str, notebook: str | None = None) -> None:
     old = Path(old_dir)
     pa = load_module(old / "epiinfer_paper_aligned.py", "old_pa")
     em = load_module(old / "epiinfer_empirical_p1.py", "old_em")
@@ -106,9 +122,12 @@ def main(old_dir: str, out: str) -> None:
                            edata.recovered_on.get(day, set()))
     gold["project_empirical"] = {"seed": 77, "day": day,
                                  "counts": {str(d): v.tolist() for d, v in sorted(eproj.items())}}
+    if notebook:
+        gold["holt_winters_notebook"] = holt_winters_from_notebook(
+            notebook, {int(k): float(v) for k, v in data.gt_total.items()})
     Path(out).write_text(json.dumps(gold, indent=1))
     print("wrote", out)
 
 
 if __name__ == "__main__":
-    main(*sys.argv[1:3])
+    main(*sys.argv[1:4])

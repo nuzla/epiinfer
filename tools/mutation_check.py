@@ -1,6 +1,6 @@
 """Tiny mutation test: break key guards in a COPY of the package and require the suite to fail.
 
-    python tools/mutation_check.py
+    uv run --all-extras python tools/mutation_check.py
 A mutation that the tests do not catch means a test is a no-op.
 """
 
@@ -41,6 +41,14 @@ MUTATIONS = [
     ("fetch.py", ".is_relative_to(root)", ".as_posix().startswith(str(root))"),
     ("core.py", "int(n_groups) if n_groups is not None else", "int(self.age_of.max()) + 1 if True else"),
     ("baselines.py", "if day + h <= min(max_day, len(y) - 1):", "if day + h < len(y):"),
+    # added with the uv migration
+    ("fetch.py", "expected_sha256 = expected_sha256 or known_checksums().get(archive.name)",
+     "expected_sha256 = expected_sha256"),
+    ("baselines.py", "lo = 0 if window is None else max(0, day - window)", "lo = 0"),
+    ("baselines.py", "return np.maximum(0.0, np.asarray(fit.forecast(steps)))",
+     "return np.asarray(fit.forecast(steps))"),
+    ("reproduce/run.py", 'if got == want:\n        return "ok"', 'if True:\n        return "ok"'),
+    ("cli.py", 'if "install the extra" in str(exc):', "if False:"),
 ]
 
 

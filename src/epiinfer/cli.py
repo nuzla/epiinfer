@@ -112,6 +112,15 @@ def _per_group(values, n, name):
 
 
 def main(argv: list[str] | None = None) -> int:
+    try:
+        return _main(argv)
+    except ImportError as exc:                 # a missing optional extra: say which one
+        if "install the extra" in str(exc):
+            raise SystemExit(f"epiinfer: {exc}") from None
+        raise
+
+
+def _main(argv: list[str] | None = None) -> int:
     args = _build().parse_args(argv)
     logging.basicConfig(level=logging.INFO if args.verbose else logging.WARNING,
                         format="%(message)s")
@@ -193,7 +202,11 @@ def main(argv: list[str] | None = None) -> int:
         tag = ("_quick" if args.quick else "") + ("_frozen" if frozen else "")
         path = out / f"reproduce_{args.table}{tag}.csv"
         df.to_csv(path, index=False)
-        print(df.to_string(index=False, float_format=lambda x: f"{x:.3f}"))
+        print(df.drop(columns=["dataset_check"]).to_string(
+            index=False, float_format=lambda x: f"{x:.3f}"))
+        checks = set(df["dataset_check"]) - {"ok", "unknown"}
+        for msg in checks:
+            print(f"\nWARNING: {msg}.\nNumbers will not match the paper; see docs/REPRODUCING.md.")
         if args.quick:
             print("\n--quick: reduced evaluation, numbers are not comparable with the paper.")
         if args.contacts == "recorded" and "baseline_window" not in TABLES[args.table]:

@@ -7,16 +7,21 @@ name = "epiinfer"
 version = "0.1.0"
 description = "EpiInfer-CONTACT: forecasting infection counts in epidemics from contact-tracing data (reproduction code for the Algorithms 2025 paper)"
 readme = "README.md"
-requires-python = ">=3.10"
+requires-python = ">=3.11"
 license = { text = "To be decided by the authors before release" }
 authors = [{ name = "Jovan Kascelan" }, { name = "Ruoxi Yang" }, { name = "Dennis Shasha" }]
-dependencies = ["numpy>=1.24", "pandas>=2.0"]
+# Floors are the oldest versions tested (CI job `lowest-deps`, Python 3.11).
+dependencies = ["numpy>=1.26", "pandas>=2.0"]
 
 [project.optional-dependencies]
 plots = ["matplotlib>=3.7"]
-baselines = ["statsmodels>=0.14"]
-all = ["matplotlib>=3.7", "statsmodels>=0.14"]
-dev = ["pytest>=8", "ruff>=0.5", "build>=1.0", "matplotlib>=3.7", "statsmodels>=0.14"]
+# scipy is only a transitive dependency of statsmodels; builds older than 1.16 fail to load
+# on current macOS (dlopen "__thread_bss" error), so the floor is pinned here.
+baselines = ["statsmodels>=0.14", "scipy>=1.16"]
+all = ["epiinfer[plots,baselines]"]
+
+[dependency-groups]
+dev = ["pytest>=8", "ruff>=0.5", "cffconvert>=2.0", "pyyaml>=6.0"]
 
 [project.scripts]
 epiinfer = "epiinfer.cli:main"
@@ -25,7 +30,9 @@ epiinfer = "epiinfer.cli:main"
 packages = ["src/epiinfer"]
 
 [tool.hatch.build.targets.sdist]
-include = ["src/epiinfer", "tests", "README.md", "docs", "pyproject.toml"]
+# everything needed to run the test suite from the sdist alone
+include = ["src/epiinfer", "tests", "tools", "examples", "docs", "README.md", "CHANGELOG.md",
+           "CITATION.cff", "pyproject.toml", "uv.lock", ".python-version"]
 
 [tool.ruff]
 line-length = 110

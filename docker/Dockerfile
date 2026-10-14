@@ -1,20 +1,26 @@
 # syntax=docker/dockerfile:1
+# Installs the exact versions in uv.lock, so every image runs the same numerical stack.
 # Build:  docker build -f docker/Dockerfile -t epiinfer .
 # Run:    docker run --rm --user "$(id -u):$(id -g)" \
 #           -v "$PWD/data:/data:ro" -v "$PWD/results:/work/results" \
 #           epiinfer reproduce --table openabm --data /data/openabm
-FROM python:3.12-slim AS build
-WORKDIR /src
-COPY pyproject.toml README.md ./
-COPY src ./src
-RUN pip install --no-cache-dir build==1.2.2 && python -m build --wheel --outdir /dist
+ARG PYTHON_IMAGE=python:3.13-slim
 
-FROM python:3.12-slim
-ENV PYTHONUNBUFFERED=1 PIP_NO_CACHE_DIR=1 MPLBACKEND=Agg HOME=/work
-COPY --from=build /dist/*.whl /tmp/
-RUN pip install "$(ls /tmp/epiinfer-*.whl)[all]" && rm -f /tmp/*.whl \
-    && useradd --create-home --uid 1000 epi \
-    && mkdir -p /work/results && chmod -R a+rwX /work
+FROM ${PYTHON_IMAGE} AS build
+COPY --from=ghcr.io/astral-sh/uv:0.12.22 /uv /bin/uv
+ENV UV_COMPILE_BYTECODE=1 UV_LINK_MODE=copy UV_PYTHON_DOWNLOADS=never \
+    UV_PROJECT_ENVIRONMENT=/opt/venv
+WORKDIR /app
+# dependencies first (cached layer), then the project itself
+COPY pyproject.toml uv.lock .python-version README.md ./
+RUN uv sync --locked --no-dev --all-extras --no-install-project
+COPY src ./src
+RUN uv sync --locked --no-dev --all-extras --no-editable
+
+FROM ${PYTHON_IMAGE}
+ENV PATH=/opt/venv/bin:$PATH PYTHONUNBUFFERED=1 MPLBACKEND=Agg HOME=/work
+COPY --from=build /opt/venv /opt/venv
+RUN useradd --create-home --uid 1000 epi && mkdir -p /work/results && chmod -R a+rwX /work
 USER epi
 WORKDIR /work
 # /data: datasets (mount read-only)   /work/results: outputs (default --out results)

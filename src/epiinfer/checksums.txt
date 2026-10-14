@@ -1,0 +1,4 @@
+# SHA-256 of the published dataset archives (built by tools/pack_datasets.py, deterministic).
+# epiinfer fetch-data verifies a download against this list when no --sha256 is given.
+3de366b4923eff21b77f34bd82ee9c5a979425a4e4f039eedfe7f390cf68d444  epiinfer-data-age_structured.zip
+92b9c6fb1b23e9c283a2be7ab35ee7a6fadd87165db65a4dd487755e5d37355e  epiinfer-data-openabm.zip

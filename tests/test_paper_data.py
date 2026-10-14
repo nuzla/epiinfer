@@ -25,6 +25,7 @@ def test_arima_column_reproduces_exactly():
     pytest.importorskip("statsmodels")
     from epiinfer.reproduce import reproduce_table
     df = reproduce_table("arima_age_structured", _data("age_structured"))
+    assert (df["dataset_check"] == "ok").all(), df["dataset_check"].iloc[0]
     assert (abs(df["rmse"] - df["paper_rmse"]) < 0.01).all(), df
 
 
@@ -32,6 +33,7 @@ def test_openabm_table_reproduces():
     """~10 s. The paper's code looked ahead at future contacts, hence contacts='recorded'."""
     from epiinfer.reproduce import reproduce_table
     df = reproduce_table("openabm", _data("openabm"), contacts="recorded")
+    assert (df["dataset_check"] == "ok").all(), df["dataset_check"].iloc[0]
     # 1.000 when the day-after-the-data target is scored against 0 as the original did
     assert (abs(df["rmse_ratio"] - 1) < 0.02).all(), df
 

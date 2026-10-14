@@ -2,7 +2,7 @@
 
 These notes come from porting the research scripts (`epiinfer_paper_aligned.py`,
 `epiinfer_empirical_p1.py`) into this library and re-running them against the 2025
-*Algorithms* proof source. Items 1–4 change how the published numbers should be read.
+*Algorithms* proof source. Items 1–5 change how the published numbers should be read.
 
 ## 1. The original code looked ahead at future contacts
 
@@ -60,8 +60,7 @@ EpiInfer-contact's 156.9 (paper) / 158.0 (this library).
 - `epiinfer reproduce --table arima_age_structured` reproduces the paper's ARIMA column.
 - `epiinfer baseline --which arima` gives ARIMA on the EpiInfer window.
 
-The Holt-Winters column (83.42 / 140.65 / …) is **not** reproduced by additive
-damped-trend smoothing on either window. Its settings appear only in commented-out text.
+The Holt-Winters column was computed on a different dataset; see item 5.
 
 ## 4. The estimated-rate rows are not reproduced by any version of the code
 
@@ -79,7 +78,26 @@ Run-to-run noise is about 5% (seeds 0–2), so these gaps are systematic. The pa
 the estimated rates having stayed at the true values. That cannot be confirmed from the
 material supplied.
 
-## 5. Smaller differences
+## 5. The Holt-Winters and LSTM columns use a different epidemic
+
+The saved output of the authors' `baselines_standalone.ipynb` prints the published
+Holt-Winters column (83.42 / 140.65 / 179.05 / 260.96) and the published LSTM column
+(111.79 / 119.71 / 155.79 / 169.83). Both were computed on `abmcontact10000aprilnewage`,
+whose age-structured epidemic peaks at **1,044** symptomatic people.
+
+EpiInfer-contact and ARIMA were scored on the archived dataset, which peaks at **915**;
+ARIMA reproduces exactly on it. So within Tables 1–8, the baseline columns and the
+EpiInfer-contact column come from **two different simulated epidemics**.
+
+The same notebook also defines "fractional RMSE" differently from the rest of the paper:
+
+- Notebook: the RMSE of the relative errors, (pred − actual) / actual.
+- Everywhere else: RMSE / mean(actual).
+
+The library uses RMSE / mean(actual) throughout. `reproduce` checks each dataset's
+identity, so this kind of mix-up now prints a warning.
+
+## 6. Smaller differences
 
 - **Scoring a day that does not exist.** The research code scored the day after the data
   ends against an actual of 0 (`gt.get(day, 0)`). That is OpenABM day 100, which has no
@@ -119,5 +137,6 @@ material supplied.
 
 - Implement the paper's reconstruction of the exposed set from infections (item 2), so
   that the method runs on data without the A state.
-- The authors should confirm which configuration produced the estimated-rate rows (item 4)
-  and the Holt-Winters column.
+- The authors should confirm which configuration produced the estimated-rate rows (item 4),
+  and supply the `abmcontact10000aprilnewage` data behind the Holt-Winters and LSTM columns
+  (item 5).
