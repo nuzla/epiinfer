@@ -58,3 +58,5 @@ jobs:
           docker run --rm --user "$(id -u):$(id -g)" -v "$PWD/results:/work/results" \
             epiinfer:ci run --data "$DEMO" --method empirical_p1 --start-eval 40 --num-sims 2 --plots
           ls results/summary_demo_data_empirical_p1.csv results/forecast_demo_data_empirical_p1.png
+      - name: docker/run_all.sh end to end (demo steps; paper tables skipped, no data here)
+        run: DATA="$PWD/data-ci" OUT="$PWD/results-ci" docker/run_all.sh

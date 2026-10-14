@@ -1,10 +1,15 @@
-# docker compose -f docker/docker-compose.yml run --rm epiinfer reproduce --table openabm --data /data/openabm
+# Same thing as `docker run`, with the mounts and user written down once.
+#   LOCAL_USER="$(id -u):$(id -g)" docker compose -f docker/docker-compose.yml run --rm epiinfer \
+#       reproduce --table openabm --data /data/openabm
+# Host ./data  -> /data           (datasets in, simulated/downloaded datasets out)
+# Host ./results -> /work/results (everything the commands write)
 services:
   epiinfer:
     build:
       context: ..
       dockerfile: docker/Dockerfile
     image: epiinfer:latest
+    user: "${LOCAL_USER:-1000:1000}"     # your uid:gid, so output files belong to you
     volumes:
-      - ../data:/data:ro
+      - ../data:/data
       - ../results:/work/results
