@@ -1,0 +1,40 @@
+[build-system]
+requires = ["hatchling"]
+build-backend = "hatchling.build"
+
+[project]
+name = "epiinfer"
+version = "0.1.0"
+description = "EpiInfer-CONTACT: forecasting infection counts in epidemics from contact-tracing data (reproduction code for the Algorithms 2025 paper)"
+readme = "README.md"
+requires-python = ">=3.10"
+license = { text = "MIT" }  # placeholder: confirm licence with the authors before publishing
+authors = [{ name = "EpiInfer authors" }]
+dependencies = ["numpy>=1.24", "pandas>=2.0"]
+
+[project.optional-dependencies]
+plots = ["matplotlib>=3.7"]
+baselines = ["statsmodels>=0.14"]
+all = ["matplotlib>=3.7", "statsmodels>=0.14"]
+dev = ["pytest>=8", "ruff", "build", "matplotlib>=3.7", "statsmodels>=0.14"]
+
+[project.scripts]
+epiinfer = "epiinfer.cli:main"
+
+[tool.hatch.build.targets.wheel]
+packages = ["src/epiinfer"]
+
+[tool.hatch.build.targets.sdist]
+include = ["src/epiinfer", "tests", "README.md", "docs", "pyproject.toml"]
+
+[tool.ruff]
+line-length = 110
+src = ["src", "tests"]
+
+[tool.ruff.lint]
+select = ["E", "F", "I", "B", "UP"]
+ignore = ["E741", "B905"]   # S/A/I/R compartment names; zip lengths are equal by construction
+
+[tool.pytest.ini_options]
+testpaths = ["tests"]
+markers = ["slow: long-running reproduction checks"]

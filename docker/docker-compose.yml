@@ -1,0 +1,10 @@
+# docker compose -f docker/docker-compose.yml run --rm epiinfer reproduce --table openabm --data /data/openabm
+services:
+  epiinfer:
+    build:
+      context: ..
+      dockerfile: docker/Dockerfile
+    image: epiinfer:latest
+    volumes:
+      - ../data:/data:ro
+      - ../results:/work/results
