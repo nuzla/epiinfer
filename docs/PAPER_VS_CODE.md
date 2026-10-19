@@ -93,7 +93,10 @@ The code does not behave like that. Three sources agree on what it produces:
   on the archived data, fail to reproduce Simulation 3 as well: the 6 July version (damping
   0.01) and the 18 August version (`_1_1`, damping 0.005) give day-10 / day-20 errors of
   191 / 547 and 190 / 547 for `unknown_both`, and 216–217 / 551 for `known_p2`. Simulation 3
-  has 29.7 / 156.5 and 30.0 / 158.6.
+  has 29.7 / 156.5 and 30.0 / 158.6. The 18 August script's own default data is the
+  `aprilnewage` data; run there (after renaming its `avg_contacts` column to `c`, which the
+  script requires, so it cannot have read this file as supplied) it gives 11.8 / 26.7 / 47.9 /
+  139.0 for `known_both` and 12.7 / 39.8 / 116 / 241 for `unknown_both`: not Simulation 3 either.
 - **Simulation 3's uniform row** (day-1 error 74.3, against 9.2 in Simulation 2) cannot be
   checked: the uniform data supplied has no contact list. Freshly simulated uniform data gives
   10.4 / 26.7 / 39.2 / 151.2 for "both known", close to Simulation 2 and far from 74.3.
