@@ -177,9 +177,9 @@ def run(data: Dataset | str | Path, method: str = "unknown_both", cfg: Config | 
 
     ``overrides`` are applied to the config, e.g. ``run(path, "empirical_p1", num_sims=5)``.
     """
-    if not isinstance(data, Dataset):
-        data = load_dataset(data)
     cfg = (cfg or default_config(method)).with_(**overrides)
+    if not isinstance(data, Dataset):
+        data = load_dataset(data, max_day=cfg.max_day)    # nothing after max_day is ever used
     return rolling_forecast(build_model(data, cfg), data, method, cfg)
 
 

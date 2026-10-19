@@ -65,9 +65,11 @@ is pre-symptomatic, and real contact-tracing data usually do not record that.
 | `tab:openabm-forecast` | `uv run epiinfer reproduce --table openabm --data DIR` | within 1% |
 | `tab:age_structured`, vs the authors' own run of the same code | `uv run epiinfer reproduce --table age_structured --data DIR` | all 16 cells within 8% |
 | `tab:age_structured`, vs the published paper | (same command) | "both known" within 10%; the other modes differ (the paper reports a different run) |
-| ARIMA column, age-structured | `uv run epiinfer reproduce --table arima_age_structured --data DIR` | exact |
-| Holt-Winters columns | `uv run epiinfer reproduce --table hw_age_structured --data DIR` | dataset not supplied |
-| `tab:uniform` | `uv run epiinfer reproduce --table uniform --data DIR` | dataset not supplied |
+| ARIMA columns (age-structured, uniform) | `uv run epiinfer reproduce --table arima_age_structured` / `arima_uniform --data DIR` | exact, each on its own dataset |
+| Holt-Winters columns | `uv run epiinfer reproduce --table hw_age_structured` / `hw_uniform --data DIR` | day 1 within 1.5%, day 20 off by 12–19% |
+| Appendix A: ARIMA | `uv run epiinfer reproduce --table appendix --scale 0.2 --methods arima --data DIR` | exact, all 720 cells |
+| Appendix A: EpiInfer-contact | `uv run epiinfer reproduce --table appendix --scale 0.2 --data DIR --jobs 4` | 79% of days 1–8 within 15%; days 9–19 match after a one-day shift (96%) |
+| `tab:uniform`'s EpiInfer-contact column | | cannot run: the uniform data has no contact list |
 
 **Getting the data.** The exact datasets are release assets: `epiinfer fetch-data --url …`
 downloads one and checks it against the SHA-256 hashes shipped in the package.
@@ -79,12 +81,13 @@ used, by population, number of days and peak. It warns if not.
 The steps, runtimes and full results are in [docs/REPRODUCING.md](docs/REPRODUCING.md).
 
 Read [docs/PAPER_VS_CODE.md](docs/PAPER_VS_CODE.md) before relying on the published
-comparisons. It covers five points:
+comparisons. It covers six main points:
 
 - the original code looked ahead at future contacts;
 - it was given the true pre-symptomatic people;
 - ARIMA was scored on a different, harder window;
 - the Holt-Winters and LSTM columns came from a different simulated epidemic;
+- the paper's Appendix A runs one day ahead of the library from about day 9;
 - the paper's estimated-rate rows are a different run from the authors' own, which the
   library does reproduce.
 

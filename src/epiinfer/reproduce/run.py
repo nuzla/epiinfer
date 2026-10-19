@@ -8,7 +8,7 @@ from pathlib import Path
 
 import pandas as pd
 
-from ..data import load_dataset
+from ..data import load_curve, load_dataset
 from ..forecast import build_model, default_config, rolling_forecast
 from .targets import TABLES
 
@@ -20,12 +20,21 @@ def fingerprint(data) -> tuple[int, int, int]:
     return (data.population_total, len(data.all_days), int(max(data.gt_total.values())))
 
 
+def curve_fingerprint(data_dir, max_day: int = 100) -> tuple[int, int, int]:
+    """The same fingerprint from ``states_total.csv`` + the population file only (so it also
+    works for datasets without a contact list)."""
+    curve = load_curve(data_dir, max_day=max_day)
+    pop = pd.read_csv(Path(data_dir) / "age_group_population.csv")["population"].sum()
+    return (int(pop), len(curve), int(max(curve.values())))
+
+
 def check_dataset(table: str, data) -> str:
-    """'ok', 'unknown' (no reference recorded) or a description of the mismatch."""
+    """'ok', 'unknown' (no reference recorded) or a description of the mismatch.
+    ``data`` is a Dataset or an already computed fingerprint tuple."""
     want = TABLES[table].get("fingerprint")
     if want is None:
         return "unknown"
-    got = fingerprint(data)
+    got = data if isinstance(data, tuple) else fingerprint(data)
     if got == want:
         return "ok"
     return (f"MISMATCH: data has {got[0]} people, {got[1]} days, peak I {got[2]}; the paper's "
@@ -34,17 +43,20 @@ def check_dataset(table: str, data) -> str:
 
 def _run_method(table: str, data_dir: str, method: str, overrides: dict) -> list[dict]:
     spec = TABLES[table]
-    data = load_dataset(data_dir)
-    dataset_check = check_dataset(table, data)
+    max_day = overrides.get("max_day", 100)
     if "baseline_window" in spec:                      # statistical baseline, own window
         from ..baselines import rolling_baseline
+        dataset_check = check_dataset(table, curve_fingerprint(data_dir, max_day))
         first, last = spec["baseline_window"]
         horizons = overrides["horizons"]
-        summ = rolling_baseline(data, method, horizons, start_eval=first, last_origin=last,
-                                max_day=last + max(horizons))
+        end = last + max(horizons)                       # last day a target may be
+        summ = rolling_baseline(load_curve(data_dir, end), method, horizons, start_eval=first,
+                                last_origin=last, max_day=end)
         summ = summ.assign(group="ALL")
         contacts = "n/a"
     else:
+        data = load_dataset(data_dir, max_day=max_day)
+        dataset_check = check_dataset(table, data)
         cfg = default_config(method).with_(**overrides)
         horizons = cfg.horizons
         summ = rolling_forecast(build_model(data, cfg), data, method, cfg).summary()

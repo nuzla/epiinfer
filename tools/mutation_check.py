@@ -49,6 +49,17 @@ MUTATIONS = [
      "return np.asarray(fit.forecast(steps))"),
     ("reproduce/run.py", 'if got == want:\n        return "ok"', 'if True:\n        return "ok"'),
     ("cli.py", 'if "install the extra" in str(exc):', "if False:"),
+    # added with the appendix / max_day work
+    ("data.py", 'parts = [c[c["day"] <= max_day] for c in', 'parts = [c for c in'),
+    ("data.py", 'states_total = states_total[states_total["day"] <= max_day]', 'states_total = states_total'),
+    ("data.py", 'curve = {k: v for k, v in curve.items() if k <= max_day}', 'curve = curve'),
+    ("forecast.py", "data = load_dataset(data, max_day=cfg.max_day)", "data = load_dataset(data)"),
+    ("reproduce/appendix.py", "cfg = cfg.with_(p1_true=(p1,) * g, p2_true=(p2,) * g)",
+     "cfg = cfg.with_(p1_true=(p1, p1, p1), p2_true=(p2, p2, p2))"),
+    ("reproduce/appendix.py", "return sorted(out, key=lambda t: (t[0], t[1]))", "return out[::-1]"),
+    ("reproduce/appendix.py", 'start_eval=10, last_origin=50)', 'start_eval=25, last_origin=99)'),
+    ("reproduce/run.py", "end = last + max(horizons)                       # last day a target may be",
+     "end = 100"),
 ]
 
 

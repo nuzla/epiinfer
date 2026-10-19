@@ -2,8 +2,27 @@
 
 ## 1. Get the data
 
-**Exact datasets (recommended).** Download the archived zips from the project's GitHub
-Release:
+The paper's datasets came as these archives (names as supplied; unzip each into its own empty
+folder). Folder names below are the ones the commands and the paper-data tests expect:
+
+| Archive | Contents | Folder to use |
+|---|---|---|
+| `EpiInfer_contacttracing_datasets-…zip` | the authors' scripts and notebooks, plus `openabm_run3.zip` | `openabm_run3` → `openabm` |
+| `data-….zip` | `abmcontact10000aprilnewage/{age_structured, uniform}`: 365-day ABM runs. **`uniform/` has no `timed_edges.csv`** | `aprilnewage_age_structured`, `aprilnewage_uniform` |
+| `Archive.zip` | `abmcontact10000april0.2`, `april0.5`, `april2`: 12 `p1_*_p2_*` scenarios each, 13 age groups, 100 days, contact list included | `appendix_april0.2`, `appendix_april0.5`, `appendix_april2` |
+| (the earlier `epiinfer/` folder) | `dataset` (the 915-peak age-structured epidemic) and `new_data_set` (= `openabm_run3`) | `age_structured`, `openabm` |
+
+Not among the files supplied: `uniform/timed_edges.csv`, the unscaled `abmcontact10000` folders
+(Appendix A's "Base" columns and Tables 9–12) and `openabm_run1`.
+
+For the paper-data tests put the folders side by side and point at them:
+
+```bash
+export EPIINFER_PAPER_DATA=/path/to/paperdata    # holds the folder names in the last column
+uv run --all-extras pytest -m paper
+```
+
+**Exact datasets for others (recommended).** Archives for a GitHub Release:
 
 ```bash
 uv run epiinfer fetch-data --url https://…/epiinfer-data-openabm.zip --dest data
@@ -14,11 +33,8 @@ uv run epiinfer fetch-data --url https://…/epiinfer-data-openabm.zip --dest da
   archive is refused before it is unpacked.
 - **Building the archives.** `tools/pack_datasets.py` builds the zips deterministically:
   re-packing the same data gives the same hash.
-- **URL.** It is not hard-coded until the repository location is chosen; set
-  `EPIINFER_DATA_URL` if you prefer an environment variable. The folders used below are:
-
-- `age_structured`: AgeMixABM with age-structured contacts, 10,000 people, days 0–100.
-- `openabm`: OpenABM-Covid19, 10,000 people, days 0–99.
+- **URL.** Set `EPIINFER_DATA_URL` instead of `--url` if you prefer an environment variable.
+  Only the two archives listed in `checksums.txt` have recorded hashes so far.
 
 **Regenerated data.** This is statistically equivalent but not byte-identical:
 
@@ -46,21 +62,27 @@ uv sync --all-extras
 uv run epiinfer reproduce --table openabm              --data data/openabm
 uv run epiinfer reproduce --table age_structured       --data data/age_structured --jobs 4
 uv run epiinfer reproduce --table arima_age_structured --data data/age_structured
+uv run epiinfer reproduce --table arima_uniform        --data data/aprilnewage_uniform
+uv run epiinfer reproduce --table hw_age_structured    --data data/aprilnewage_age_structured
+uv run epiinfer reproduce --table appendix --scale 0.2 --data data/appendix_april0.2 --jobs 4
 ```
 
-Each run writes a CSV and prints a comparison. Its columns are `paper_rmse`, `rmse`,
-`rmse_ratio`, `paper_frmse`, `frmse` and `n_origins`.
+Each `--table` run writes a CSV and prints a comparison. Its columns are `paper_rmse`, `rmse`,
+`rmse_ratio`, `paper_frmse`, `frmse` and `n_origins`. `--table appendix` compares all 20
+horizons for the 12 (p1, p2) pairs of one contact scale (`--methods arima contact`).
 
 The CSV also has `dataset_check`, which identifies the data by population, number of days
-and peak symptomatic count:
+(counting up to day 100) and peak symptomatic count:
 
 | Data | Population | Days | Peak |
 |---|---|---|---|
 | Archived age-structured | 10,000 | 101 | 915 |
+| `aprilnewage` age-structured | 10,000 | 101 | 1,044 |
+| `aprilnewage` uniform | 10,000 | 101 | 1,012 |
 | OpenABM | 10,000 | 100 | 2,704 |
 
 A different dataset prints a **WARNING: MISMATCH** instead of quietly giving different
-numbers.
+numbers. (Running `age_structured` on the `aprilnewage` data therefore warns, correctly.)
 
 - **Contacts.** `--contacts recorded` is the default here. It uses each future day's
   recorded contacts, which is how the published numbers were made. `--contacts frozen`
@@ -81,7 +103,7 @@ Runtimes were measured on an Apple-silicon Mac, single-threaded per method:
 | `age_structured` with `--jobs 1` | ~14 min (unknown_both ~9 min, known_p1 / known_p2 ~5 min, known_both <1 min) |
 | `age_structured` with `--jobs 4` | ~7 min |
 
-## 3. Results (seed 0, 10 trajectories, archived data)
+## 3. Results (seed 0, 10 trajectories)
 
 Each cell is RMSE for the whole population, as **ours / paper (ratio)**.
 
@@ -123,35 +145,68 @@ paper, and the authors' own 13 July run of the same script on the same data
 `EPIINFER_PAPER_DATA=data uv run --all-extras pytest -m paper` re-checks all 16 cells against
 the authors' run.
 
-### ARIMA(1,1,1), age-structured (`tab:baseline-abs`)
+### ARIMA(1,1,1) (`tab:baseline-abs`)
 
-| Window | Day 1 | Day 5 | Day 10 | Day 20 |
+| Data, window | Day 1 | Day 5 | Day 10 | Day 20 |
 |---|---|---|---|---|
-| origins 10–50 (paper's) | 30.12 / 30.12 | 279.61 / 279.61 | 474.92 / 474.93 | 833.68 / 833.68 |
-| origins 25–99 (EpiInfer's) | 20.0 | 85.4 | 97.7 | 111.8 |
+| 915-peak age-structured, origins 10–50: ours / paper | 30.12 / 30.12 | 279.61 / 279.61 | 474.92 / 474.93 | 833.68 / 833.68 |
+| `aprilnewage` uniform, origins 10–50: ours / paper | 149.53 / 149.53 | 501.66 / 501.66 | 730.34 / 730.34 | 984.59 / 984.59 |
+| 915-peak age-structured, origins 25–99 (EpiInfer's window) | 20.0 | 85.4 | 97.7 | 111.8 |
 
-The paper's column **reproduces exactly**, but only on its own window. See
-`PAPER_VS_CODE.md`, item 3.
+Both published ARIMA columns **reproduce exactly**, but each on a different dataset and only on
+the authors' own window. On the `aprilnewage` age-structured data the age-structured ARIMA column does
+not reproduce (136.8 / 328.8 / 360.5 / 408.9). See `PAPER_VS_CODE.md`, items 3 and 5.
 
-### Holt-Winters (`hw_age_structured`, `hw_uniform`)
+### Holt-Winters (`hw_age_structured`, `hw_uniform`) on the `aprilnewage` data
 
 The library's Holt-Winters is the authors' own notebook code: additive damped trend, a
-14-day trailing window, origins 25–99, and forecasts clipped at 0. Run on the demo data it
-gives the same RMSE as that code to within 1e-4 relative (`tests/test_golden.py`); the optimiser stops at slightly different points on macOS and Linux, so an exact match is not expected.
+14-day trailing window, origins 25–99, targets up to day 119, and forecasts clipped at 0. It
+gives the same RMSE as that code on the demo data to within 1e-4 relative
+(`tests/test_golden.py`).
 
-The paper's Holt-Winters column cannot be checked here. The notebook's saved output shows
-it was computed on a different simulated epidemic (`abmcontact10000aprilnewage`, peak 1,044
-age-structured and 1,012 uniform). That dataset was not supplied. On the archived data
-(peak 915) the same code gives 23.3 / 76.3 / 89.0 / 111.7, against the published
-83.4 / 140.7 / 179.1 / 261.0. See `PAPER_VS_CODE.md`, item 5.
+| Data | | Day 1 | Day 5 | Day 10 | Day 20 |
+|---|---|---|---|---|---|
+| age-structured (peak 1,044) | ours | 84.0 | 130.7 | 167.5 | 211.1 |
+| | paper | 83.4 | 140.7 | 179.1 | 261.0 |
+| uniform (peak 1,012) | ours | 89.3 | 136.8 | 174.4 | 228.8 |
+| | paper | 90.5 | 139.4 | 178.0 | 260.4 |
+
+Only **approximately** reproduced: day 1 within 1.5%, day 20 off by 12–19%. The statsmodels fit
+is sensitive to the version, and the notebook silently switches to a hand-written Holt model if
+the fit raises; I could not pin the original versions (`PAPER_VS_CODE.md`, item 5).
+
+### Appendix A (`--table appendix`), EpiInfer-contact and ARIMA
+
+Run on the 36 epidemics of `Archive.zip` (contact scales 0.2, 0.5, 2; 12 (p1, p2) pairs each;
+both rates known; recorded contacts; 10 trajectories, seed 0; 720 cells per method).
+
+| | ARIMA | EpiInfer-contact days 1–8 | days 9–19, vs our day h + 1 |
+|---|---|---|---|
+| scale 0.2 | exact (rel. diff ≤ 8e-5) | median 1.00 | median 1.03 |
+| scale 0.5 | exact (≤ 2e-5) | median 1.03 | median 1.05 |
+| scale 2 | exact (≤ 9e-4) | median 1.05 | median 1.04 |
+| share within ±15% | 100% | 79% | 96% (47% without the shift) |
+
+ARIMA is exact. EpiInfer-contact matches the paper's curve once the paper's days 9 and later
+are aligned with the library's day h + 1: the paper's curve runs one day ahead of the library
+from about day 9 (`PAPER_VS_CODE.md`, item 7). Run time with `--jobs 4`: about 1 minute per
+epidemic at scale 0.2, 2 at scale 0.5, and 4–9 at scale 2.
+
+### `tab:age_structured` on the `aprilnewage` data, for comparison
+
+On the 1,044-peak data the library's "both known" run gives 12.5 / 27.3 / 46.5 / 138.3 against the
+paper's 8.7 / 17.5 / 29.7 / 156.9, so the paper's EpiInfer-contact rows do **not** come from that
+epidemic (they do come from the 915-peak one, above). The warning `MISMATCH` marks this case.
 
 ### Not checked
 
-- **`tab:uniform`.** The uniform-contact dataset was not supplied.
+- **`tab:uniform`'s EpiInfer-contact column.** The uniform data supplied has no
+  `timed_edges.csv`.
 - **LSTM.** Not implemented. The authors' Keras model is trained without a seed, and it
-  also used the April dataset.
-- **Parameter-sweep tables 9–12 and Appendix A.** Their datasets were not supplied.
-  `epiinfer simulate --p1 … --p2 …` can generate equivalents.
+  also used the `aprilnewage` data.
+- **Appendix A "Base" columns and Tables 9–12.** They need the unscaled `abmcontact10000`
+  folders, which were not supplied. The column for the older EpiInfer needs an implementation
+  of it, also not supplied.
 
 ## 4. Your own predictions
 

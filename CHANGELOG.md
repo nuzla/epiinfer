@@ -26,4 +26,10 @@ First packaged version of the EpiInfer-CONTACT research code.
   authors' 13 July run of the same script (`results_paper_aligned.csv`) next to the paper;
   the library matches it in all 16 cells within 8.3%. The published paper reports a different
   run ("Simulation 3" in the authors' July draft).
+- **More of the paper's data.** `load_dataset(..., max_day=)` reads only what a forecast uses (the
+  365-day, 800 MB contact lists of the `aprilnewage` data load in the same time as a 100-day
+  one); `load_curve` and path-based baselines run on datasets without a contact list.
+- **New `reproduce` targets**: `arima_uniform`, `hw_*` on the right dataset, and
+  `--table appendix --scale {0.2,0.5,2}` for Appendix A (ARIMA exact on all 720 cells;
+  EpiInfer-contact matches up to a one-day offset in the paper).
 - Differences from the paper are documented in `docs/PAPER_VS_CODE.md`.

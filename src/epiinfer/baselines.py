@@ -15,11 +15,12 @@ cannot be reproduced exactly.
 from __future__ import annotations
 
 import warnings
+from pathlib import Path
 
 import numpy as np
 import pandas as pd
 
-from .data import Dataset
+from .data import Dataset, load_curve
 from .metrics import fractional_rmse, rmse
 
 
@@ -56,7 +57,7 @@ BASELINES = {"arima": _arima, "holt_winters": _holt_winters}
 DEFAULT_WINDOW = {"arima": None, "holt_winters": 14}
 
 
-def rolling_baseline(data: Dataset, name: str = "arima", horizons=(1, 5, 10, 20),
+def rolling_baseline(data: Dataset | dict | str | Path, name: str = "arima", horizons=(1, 5, 10, 20),
                      start_eval: int = 25, max_day: int = 100,
                      last_origin: int | None = None, window: int | None | str = "default"
                      ) -> pd.DataFrame:
@@ -68,16 +69,19 @@ def rolling_baseline(data: Dataset, name: str = "arima", horizons=(1, 5, 10, 20)
     of trailing days each fit sees (``"default"``: whole history for ARIMA, 14 for HW).
     """
     _need_statsmodels()
+    if isinstance(data, (str, Path)):
+        data = load_curve(data)            # states_total.csv only: no contact list needed
     if name not in BASELINES:
         raise ValueError(f"unknown baseline {name!r}; choose from {sorted(BASELINES)}")
     fn = BASELINES[name]
     if window == "default":
         window = DEFAULT_WINDOW[name]
-    days = sorted(data.gt_total)
+    curve = data if isinstance(data, dict) else data.gt_total
+    days = sorted(curve)
     if days != list(range(days[0], days[-1] + 1)) or days[0] != 0:
         raise ValueError("baselines need a contiguous daily series starting at day 0")
     last = min(max_day, max(days) + 1)
-    y = np.array([data.gt_total[d] for d in days], float)
+    y = np.array([curve[d] for d in days], float)
     preds = {h: [] for h in horizons}
     acts = {h: [] for h in horizons}
     stop = last if last_origin is None else min(last, last_origin + 1)

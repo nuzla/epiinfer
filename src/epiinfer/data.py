@@ -164,18 +164,47 @@ def validate_age_mapping(age_of, daily_contacts, d: Path, labels) -> bool:
             log.warning("age mapping mismatch group %s (%s): measured %.2f vs reference %.2f",
                         g, labels[g] if g < len(labels) else g, measured, r)
     if not ok:
-        log.warning("degree mismatch: contiguous id->age may be wrong; "
-                    "provide individual_age_group.csv")
+        log.warning("mean day-1 contacts per group differ from %s by >15%%. If your ids are grouped "
+                    "contiguously by age (as the ABM writes them) the mapping is fine and the "
+                    "reference file is simply defined differently (it disagrees on every ABM "
+                    "dataset supplied with the paper); otherwise provide individual_age_group.csv",
+                    path.name)
     return ok
 
 
-def load_dataset(path: str | Path, name: str | None = None) -> Dataset:
-    """Read one dataset folder (see module docstring for the file contract)."""
+def _read_until(path: Path, columns: tuple[str, ...], max_day: int | None) -> pd.DataFrame:
+    """Read a long CSV, keeping only rows with ``day <= max_day`` (all rows if None).
+
+    The paper's ABM runs for 365 days (an 800 MB edge list) but forecasts use only the first
+    100; filtering while reading keeps memory in proportion to what is used.
+    """
+    if max_day is None:
+        return _require(path, columns)
+    _require_header(path, columns)
+    parts = [c[c["day"] <= max_day] for c in pd.read_csv(path, chunksize=2_000_000)]
+    return pd.concat(parts, ignore_index=True)
+
+
+def _require_header(path: Path, columns: tuple[str, ...]) -> None:
+    if not path.exists():
+        raise DataFormatError(f"required file not found: {path}")
+    head = pd.read_csv(path, nrows=0)
+    missing = [c for c in columns if c not in head.columns]
+    if missing:
+        raise DataFormatError(f"{path.name}: missing column(s) {missing}; has {list(head.columns)}")
+
+
+def load_dataset(path: str | Path, name: str | None = None, max_day: int | None = None) -> Dataset:
+    """Read one dataset folder (see module docstring for the file contract).
+
+    ``max_day``: ignore everything after that day. Forecasts never use data beyond
+    ``Config.max_day``, so ``run``/``forecast``/``reproduce`` pass it automatically.
+    """
     d = Path(path)
     if not d.is_dir():
         raise DataFormatError(f"dataset folder not found: {d}")
-    df_status = _require(d / "individual_day_state.csv", ("id", "day", "state"))
-    df_contacts = _require(d / "timed_edges.csv", ("day", "i", "j"))
+    df_status = _read_until(d / "individual_day_state.csv", ("id", "day", "state"), max_day)
+    df_contacts = _read_until(d / "timed_edges.csv", ("day", "i", "j"), max_day)
 
     pop_path = d / "age_group_population.csv"
     ages_path = d / "individual_age_group.csv"
@@ -193,6 +222,8 @@ def load_dataset(path: str | Path, name: str | None = None) -> Dataset:
 
     st_path = d / "states_total.csv"
     states_total = pd.read_csv(st_path) if st_path.exists() else None
+    if states_total is not None and max_day is not None and "day" in states_total.columns:
+        states_total = states_total[states_total["day"] <= max_day].reset_index(drop=True)
     pop_total = int(pop_df["population"].sum())
     for fname, frame, cols in (("individual_day_state.csv", df_status, ("id",)),
                                ("timed_edges.csv", df_contacts, ("i", "j"))):
@@ -242,6 +273,8 @@ def load_dataset(path: str | Path, name: str | None = None) -> Dataset:
     gi_path = d / "daily_group_infected.csv"
     if gi_path.exists():
         gi = _require(gi_path, ("day", "age", "infected"))
+        if max_day is not None:
+            gi = gi[gi["day"] <= max_day]
         if gi["age"].min() < 0 or gi["age"].max() >= len(labels):
             raise DataFormatError(f"{gi_path.name}: age index outside 0..{len(labels) - 1}")
         for row in gi.itertuples(index=False):
@@ -270,3 +303,25 @@ def load_dataset(path: str | Path, name: str | None = None) -> Dataset:
     return Dataset(name or d.name, pop_total, labels, age_of, daily_contacts, asymp_on,
                    susceptible_on, inf_on, rec_on, new_asymp, new_inf, new_asymp_s, new_inf_s,
                    gt_total, gt_group, states_total, all_days)
+
+
+def load_curve(path: str | Path, max_day: int | None = None) -> dict[int, float]:
+    """``{day: symptomatic count}`` from ``states_total.csv`` alone (column ``I``, or
+    ``individual_day_state.csv`` if that is all there is).
+
+    The ARIMA / Holt-Winters baselines need nothing else, so they also run on datasets that
+    lack a contact list (the paper's uniform-contact data has none).
+    """
+    d = Path(path)
+    st = d / "states_total.csv"
+    if st.exists():
+        df = _require(st, ("day", "I"))
+        curve = dict(zip(df["day"].astype(int), df["I"].astype(float), strict=False))
+    else:
+        df = _require(d / "individual_day_state.csv", ("id", "day", "state"))
+        curve = {int(k): float(v) for k, v in (df[df["state"] == 2].groupby("day").size()).items()}
+        for day in sorted(df["day"].unique()):
+            curve.setdefault(int(day), 0.0)
+    if max_day is not None:
+        curve = {k: v for k, v in curve.items() if k <= max_day}
+    return dict(sorted(curve.items()))

@@ -57,7 +57,11 @@ def _build() -> argparse.ArgumentParser:
     _common(p)
 
     p = sub.add_parser("reproduce", help="re-run a paper table and compare with published values")
-    p.add_argument("--table", required=True, choices=sorted(TABLES))
+    p.add_argument("--table", required=True, choices=[*sorted(TABLES), "appendix"],
+                   help="'appendix': Appendix A (needs --scale; --data is the folder holding the "
+                        "12 p1_*_p2_* sub-folders)")
+    p.add_argument("--scale", choices=["0.2", "0.5", "2"], default=None,
+                   help="contact scale for --table appendix")
     p.add_argument("--data", required=True, help="dataset folder for that table")
     p.add_argument("--quick", action="store_true", help="smoke test (not comparable to paper)")
     p.add_argument("--methods", nargs="+", default=None,
@@ -109,6 +113,29 @@ def _per_group(values, n, name):
     if len(values) != n:
         raise SystemExit(f"--{name} needs 1 or {n} values")
     return tuple(values)
+
+
+def _reproduce_appendix(args) -> int:
+    from .reproduce import reproduce_appendix
+    if not args.scale:
+        raise SystemExit("--table appendix needs --scale 0.2, 0.5 or 2")
+    methods = tuple(args.methods) if args.methods else ("arima", "contact")
+    df = reproduce_appendix(args.data, args.scale, methods, seed=args.seed, num_sims=args.num_sims,
+                            workers=args.workers, contacts=args.contacts, jobs=args.jobs,
+                            quick=args.quick)
+    out = Path(args.out)
+    out.mkdir(parents=True, exist_ok=True)
+    path = out / f"reproduce_appendix_scale{args.scale}{'_quick' if args.quick else ''}.csv"
+    df.to_csv(path, index=False)
+    show = df[df["day"].isin([1, 5, 10, 20])]
+    print(show.to_string(index=False, float_format=lambda x: f"{x:.3f}"))
+    summ = df.groupby("method")["ratio"].describe()[["count", "min", "50%", "max"]]
+    table = summ.to_string(float_format=lambda x: f"{x:.3f}")
+    print("\nratio ours / paper over all days and pairs:\n" + table)
+    if args.quick:
+        print("\n--quick: reduced evaluation, numbers are not comparable with the paper.")
+    print(f"\nwrote {path}")
+    return 0
 
 
 def main(argv: list[str] | None = None) -> int:
@@ -189,6 +216,9 @@ def _main(argv: list[str] | None = None) -> int:
             from .plots import plot_forecast
             print(plot_forecast(res, out))
         return 0
+
+    if args.cmd == "reproduce" and args.table == "appendix":
+        return _reproduce_appendix(args)
 
     if args.cmd == "reproduce":
         from .reproduce import reproduce_table
