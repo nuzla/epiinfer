@@ -18,8 +18,9 @@ you need nothing installed except Docker.
 
 **Same numbers as here.** Steps 1–6 are
 [`docs/tutorial/run_tutorial.sh`](tutorial/run_tutorial.sh), and every table and plot in them
-is that script's output (the files are in [`docs/tutorial/outputs`](tutorial/outputs) and
-[`docs/tutorial/img`](tutorial/img)). CI runs the script inside the Docker image on every
+is that script's output (the files are in
+[`docs/tutorial/outputs`](https://github.com/nuzla/epiinfer/tree/main/docs/tutorial/outputs) and
+[`docs/tutorial/img`](https://github.com/nuzla/epiinfer/tree/main/docs/tutorial/img)). CI runs the script inside the Docker image on every
 change and fails if any number differs, so you should get exactly these results. All the
 randomness is seeded.
 

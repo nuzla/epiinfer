@@ -19,12 +19,22 @@ def _prose(path: Path) -> str:
 
 
 def test_relative_links_and_images_resolve():
+    """Links must work on GitHub and on the published site (nuzla.github.io/epiinfer, built from
+    docs/ alone): from a page in docs/ they must name a file inside docs/. A folder or a file
+    outside docs/ (../examples/...) opens on GitHub but is a 404 on the site; use a full URL."""
+    docs_dir = ROOT / "docs"
     broken = []
     for doc in DOCS:
         for m in re.finditer(r"\]\(([^)\s]+)\)", _prose(doc)):
             target = m.group(1).split("#")[0]
-            if target and not re.match(r"[a-z]+:", target) and not (doc.parent / target).exists():
+            if not target or re.match(r"[a-z]+:", target):
+                continue
+            path = (doc.parent / target).resolve()
+            if not path.exists():
                 broken.append(f"{doc.name}: {m.group(1)}")
+            elif doc.parent == docs_dir and (not path.is_file() or docs_dir not in path.parents):
+                broken.append(f"{doc.name}: {m.group(1)} (the published site serves files in "
+                              f"docs/ only)")
     assert not broken, broken
 
 
