@@ -12,7 +12,7 @@ jobs:
     env:
       UV_PYTHON: ${{ matrix.python }}     # `uv run` re-syncs; keep it on the matrix Python
     steps:
-      - uses: actions/checkout@v4
+      - uses: actions/checkout@v7
       - uses: astral-sh/setup-uv@v6
         with: { version: "${{ env.UV_VERSION }}" }
       - run: uv lock --check                       # uv.lock must match pyproject.toml
@@ -28,7 +28,7 @@ jobs:
   workflow-lint:
     runs-on: ubuntu-latest
     steps:
-      - uses: actions/checkout@v4
+      - uses: actions/checkout@v7
       - uses: astral-sh/setup-uv@v6
         with: { version: "${{ env.UV_VERSION }}" }
       - run: uvx --from actionlint-py actionlint
@@ -36,7 +36,7 @@ jobs:
     # no optional extras: plotting/baseline tests must skip, everything else must pass
     runs-on: ubuntu-latest
     steps:
-      - uses: actions/checkout@v4
+      - uses: actions/checkout@v7
       - uses: astral-sh/setup-uv@v6
         with: { version: "${{ env.UV_VERSION }}" }
       - run: uv run --locked pytest -q
@@ -44,7 +44,7 @@ jobs:
     # the declared floors (numpy 1.26, pandas 2.0, statsmodels 0.14, scipy 1.16, ...) must work
     runs-on: ubuntu-latest
     steps:
-      - uses: actions/checkout@v4
+      - uses: actions/checkout@v7
       - uses: astral-sh/setup-uv@v6
         with: { version: "${{ env.UV_VERSION }}" }
       - run: >
@@ -54,7 +54,7 @@ jobs:
     runs-on: ubuntu-latest
     needs: test
     steps:
-      - uses: actions/checkout@v4
+      - uses: actions/checkout@v7
       - run: docker build -f docker/Dockerfile -t epiinfer:ci .
       - run: docker run --rm epiinfer:ci --version
       - name: smoke test on the bundled demo data, as an arbitrary non-root uid
@@ -72,7 +72,7 @@ jobs:
     runs-on: ubuntu-latest
     needs: test
     steps:
-      - uses: actions/checkout@v4
+      - uses: actions/checkout@v7
       - uses: astral-sh/setup-uv@v6
         with: { version: "${{ env.UV_VERSION }}" }
       - run: docker build -f docker/Dockerfile -t epiinfer:ci .
