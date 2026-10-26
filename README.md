@@ -13,7 +13,8 @@ and isolated. It averages Monte-Carlo trajectories to forecast the number of sym
 people.
 
 **New here? Start with the [tutorial](docs/TUTORIAL.md).** It walks through a forecast in
-Docker step by step, with the exact output and plots you should get.
+Docker step by step, with the exact output and plots you should get. The documentation is also
+published at <https://nuzla.github.io/epiinfer/>.
 
 The paper's numbers come from three versions of the code, and the library has an engine
 for each:

@@ -470,7 +470,8 @@ wrote /data/my_data: 9981 people, days 0-99 (day 0 = 2026-03-02)
 
 Person labels can be any text; `people.csv` in the output maps the numeric ids back to
 them. In Python the same is `epiinfer.convert.cases_to_dataset`, and
-[`examples/convert_case_list.py`](../examples/convert_case_list.py) is a script version.
+[`examples/convert_case_list.py`](https://github.com/nuzla/epiinfer/blob/main/examples/convert_case_list.py)
+is a script version.
 
 The output above comes from the tutorial epidemic written out as a case list and a contact
 list. Starting from just those two files, `describe` sees the same epidemic, now without
