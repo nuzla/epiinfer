@@ -4,8 +4,10 @@
 
 Every CSV under the expected folder must exist in the results with the same columns, the same
 non-numeric values and numbers equal to a relative 1e-9; .txt files must match line by line.
-The ARIMA and Holt-Winters tables are compared to a relative 1e-4, because statsmodels'
-optimiser differs slightly between platforms (tests/test_golden.py allows the same).
+Two tables are compared more loosely, because statsmodels' optimiser differs between
+platforms: ARIMA to a relative 1e-4 (tests/test_golden.py allows the same; measured 1e-9) and
+Holt-Winters to 5e-3 (the Docker image on linux/amd64 and a native Apple-silicon run differ by
+up to 0.2%, at day 20).
 Exit status 1 lists every difference.
 """
 
@@ -32,7 +34,7 @@ def compare(results: Path, expected: Path) -> list[str]:
             if list(a.columns) != list(b.columns) or len(a) != len(b):
                 problems.append(f"{exp.name}: shape/columns differ {a.shape} vs {b.shape}")
                 continue
-            rtol = 1e-4 if ("arima" in exp.name or "holt_winters" in exp.name) else 1e-9
+            rtol = 5e-3 if "holt_winters" in exp.name else 1e-4 if "arima" in exp.name else 1e-9
             for c in b.columns:
                 if pd.api.types.is_numeric_dtype(b[c]):
                     x, y = a[c].to_numpy(float), b[c].to_numpy(float)

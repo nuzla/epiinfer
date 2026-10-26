@@ -1,5 +1,5 @@
 #!/usr/bin/env bash
-# Runs every command of docs/TUTORIAL.md, in order, and collects the outputs.
+# Runs the commands of docs/TUTORIAL.md, steps 0-6, in order, and collects the outputs.
 #
 #   docs/tutorial/run_tutorial.sh                 # inside Docker (image below)
 #   IMAGE=epiinfer docs/tutorial/run_tutorial.sh  # a locally built image

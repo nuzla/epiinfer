@@ -23,6 +23,15 @@ is that script's output (the files are in [`docs/tutorial/outputs`](tutorial/out
 change and fails if any number differs, so you should get exactly these results. All the
 randomness is seeded.
 
+The numbers were checked on two platforms: the Docker image on Linux (Intel/AMD) and a
+native run on an Apple-silicon Mac:
+
+- **Both EpiInfer-contact engines:** bit-identical.
+- **The earlier EpiInfer and ARIMA:** equal to better than one part in a billion (last-digit
+  rounding).
+- **Holt-Winters:** differs by up to 0.2%, because its statsmodels fit is platform-sensitive.
+- **The plots:** can differ in font rendering.
+
 ---
 
 ## 0. Set up
@@ -367,10 +376,10 @@ method  horizon  n       rmse    frmse
  arima       20 55 122.322350 0.184392
 
       method  horizon  n       rmse    frmse
-holt_winters        1 55  21.996859 0.033330
-holt_winters        5 55  78.547691 0.119489
-holt_winters       10 55 107.386200 0.161926
-holt_winters       20 55 140.000378 0.211040
+holt_winters        1 55  21.985009 0.033312
+holt_winters        5 55  78.473990 0.119377
+holt_winters       10 55 107.270618 0.161751
+holt_winters       20 55 139.720527 0.210619
 ```
 
 Both use only the daily count of symptomatic people:
@@ -398,7 +407,7 @@ epi plot-rmse \
 | EpiInfer-contact, 2025 engine (uses the true A) | **11.7** | **34.3** | 52.8 | 83.8 |
 | EpiInfer, earlier model | 43.4 | 89.9 | 917.5 | 800.6 |
 | ARIMA(1,1,1) | 22.0 | 87.7 | 116.3 | 122.3 |
-| Holt-Winters | 22.0 | 78.5 | 107.4 | 140.0 |
+| Holt-Winters | 22.0 | 78.5 | 107.3 | 139.7 |
 
 **What this shows, for this one epidemic and seed:**
 
