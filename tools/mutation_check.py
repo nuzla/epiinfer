@@ -1,7 +1,9 @@
 """Tiny mutation test: break key guards in a COPY of the package and require the suite to fail.
 
-    uv run --all-extras python tools/mutation_check.py
-A mutation that the tests do not catch means a test is a no-op.
+    uv run --all-extras python tools/mutation_check.py            # every mutation (~30 min)
+    uv run --all-extras python tools/mutation_check.py cli.py     # only those touching cli.py
+A mutation that the tests do not catch means a test is a no-op. Do not edit the package while
+it runs: every mutation re-copies it.
 """
 
 import shutil
@@ -89,12 +91,52 @@ MUTATIONS = [
      "p_exp = np.sum(inf_g) / (np.mean(p2) * np.sum(free))"),
     ("forecast.py", "cfg.start_eval + 1, last + 1, cfg.group_contacts",
      "cfg.start_eval, last, cfg.group_contacts"),
+    # added with the review of 0.2.0
+    ("forecast.py", "fd = _final_data(data, _load_until(from_day, horizon))",
+     "fd = _final_data(data, cfg.max_day)"),                        # forecast read only 100 days
+    ("forecast.py", "gc = _group_counts(data, _load_until(from_day, horizon))",
+     "gc = _group_counts(data, cfg.max_day)"),
+    ("forecast.py", "return None if from_day is None else int(from_day) + int(horizon)",
+     "return None if from_day is None else int(from_day)"),         # window must reach the targets
+    ("final.py", "    if day < need:", "    if False:"),               # not enough history to calibrate
+    ("final.py", "if p2_true is not None and not 0 < p2_true <= 1:", "if False:"),
+    ("forecast.py",
+     'if method in ("known_p1", "known_p2", "unknown_both") and start < model.inc + model.duration:',
+     "if False:"),
+    ("config.py", "if self.recalib_every < 1:", "if False:"),
+    ("config.py", "object.__setattr__(self, name, rates)", "pass"),  # one number = a 1-tuple
+    ("data.py", "if len(ids) and (ids.min() < 0 or ids.max() >= pop_total):", "if False:"),
+    ("data.py", "if frame.empty:                          # a dataset may have no contacts at all",
+     "if False:"),
+    ("forecast.py", "return pd.DataFrame(out, columns=SUMMARY_COLUMNS)", "return pd.DataFrame(out)"),
+    ("forecast.py", "pd.DataFrame(rows, columns=ROW_COLUMNS),", "pd.DataFrame(rows),"),
+    ("cli.py", "if res.rows.empty:", "if False:"),
+    ("cli.py", "if args.verbose:                       # -v keeps the traceback for bug reports",
+     "if True:"),
+    ("cli.py", "if col not in tot.columns:", "if False:"),
+    ("plots.py", 'if metric not in df.columns or "horizon" not in df.columns:', "if False:"),
+    ("simulate/abm.py", "if len(sizes) > C.shape[0]:", "if False:"),
+    ("compartmental.py", "if case in CASES and first_origin < min_origin(case, inc):", "if False:"),
+    ("forecast.py", "if cfg.start_eval < need:", "if False:"),
+    ("compartmental.py", "            if lacking:", "            if False:"),
+    ("compartmental.py", "if col not in con.columns:", "if False:"),
+    ("forecast.py", "if not any(data.asymp_on.get(d) for d in data.all_days):", "if False:"),
+    ("baselines.py", "order=(1, 1, 1)", "order=(1, 0, 1)"),    # nothing pinned ARIMA without paper data
+    ("convert.py",
+     "    for d, i in spans:\n        state[d + duration:d + duration + rec_duration, i] = 3\n"
+     "    for d, i in spans:\n        state[d:d + duration, i] = 2",
+     "    for d, i in spans:\n        state[d:d + duration, i] = 2\n"
+     "        state[d + duration:d + duration + rec_duration, i] = 3"),   # row order mattered
 ]
 
 
 def main() -> int:
+    """Run every mutation, or only those whose file or pattern contains an argument."""
+    only = sys.argv[1:]
     survivors = []
     for rel, old, new in MUTATIONS:
+        if only and not any(s in rel or s in old for s in only):
+            continue
         with tempfile.TemporaryDirectory() as tmp:
             work = Path(tmp) / "pkg"
             shutil.copytree(ROOT / "src" / "epiinfer", work / "epiinfer")
@@ -112,7 +154,8 @@ def main() -> int:
             print(f"{status} {rel}: {old[:60]!r}")
             if r.returncode == 0:
                 survivors.append((rel, old))
-    print(f"\n{len(MUTATIONS) - len(survivors)}/{len(MUTATIONS)} mutations caught")
+    ran = sum(1 for rel, old, _ in MUTATIONS if not only or any(s in rel or s in old for s in only))
+    print(f"\n{ran - len(survivors)}/{ran} mutations caught")
     return 1 if survivors else 0
 
 

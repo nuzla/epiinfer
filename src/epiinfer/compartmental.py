@@ -42,6 +42,7 @@ from pathlib import Path
 import numpy as np
 import pandas as pd
 
+from .data import DataFormatError
 from .metrics import fractional_rmse, relative_rmse, rmse
 
 INC, DURATION, ETA = 7, 7, 1 / 10
@@ -83,10 +84,22 @@ class GroupCounts:
         missing = [f for f in FILES if not (d / f).exists()]
         if missing:
             raise FileNotFoundError(f"{d}: the compartmental model needs {', '.join(missing)}")
-        pop = pd.read_csv(d / "age_group_population.csv")
-        st = pd.read_csv(d / "states_total.csv")
+
+        def read(name, *columns):
+            df = pd.read_csv(d / name)
+            lacking = [c for c in columns if c not in df.columns]
+            if lacking:
+                raise DataFormatError(f"{name}: missing column(s) {lacking}; has "
+                                      f"{list(df.columns)}")
+            return df
+
+        pop = read("age_group_population.csv", "population")
+        st = read("states_total.csv", "day", "I", "R")
         if max_day is not None:
             st = st[st["day"] <= max_day]
+        if st.empty:
+            raise ValueError(f"{d / 'states_total.csv'} has no rows"
+                             + (f" up to day {max_day}" if max_day is not None else ""))
         G = len(pop)
         days = int(st["day"].max()) + 1
         I = np.zeros((days, G + 1))
@@ -112,7 +125,7 @@ class GroupCounts:
                 return vals.map(m).astype(int)
             raise ValueError(f"{name} needs an 'age' or 'age_group' column")
 
-        inf = pd.read_csv(d / "daily_group_infected.csv")
+        inf = read("daily_group_infected.csv", "day", "infected")
         inf = (inf.assign(grp=group_index(inf, "daily_group_infected.csv"))
                .groupby(["day", "grp"], as_index=False)["infected"].sum())
         for row in inf.itertuples(index=False):
@@ -121,8 +134,11 @@ class GroupCounts:
                 I[day, g + 1] = float(row.infected)
                 new[day, g + 1] = float(row.infected)
                 new[day, 0] += float(row.infected)
-        con = pd.read_csv(d / "daily_group_avg_contacts.csv")
+        con = read("daily_group_avg_contacts.csv", "day")
         col = "c" if "c" in con.columns else "avg_contacts"
+        if col not in con.columns:
+            raise DataFormatError(f"daily_group_avg_contacts.csv: needs a column c (or "
+                                  f"avg_contacts); has {list(con.columns)}")
         con = (con.assign(grp=group_index(con, "daily_group_avg_contacts.csv"),
                           cval=pd.to_numeric(con[col], errors="raise"))
                .groupby(["day", "grp"], as_index=False)["cval"].mean())
@@ -206,6 +222,13 @@ def simulate(c: GroupCounts, p1, p2, start: int, horizon: int,
     return I
 
 
+def min_origin(case: str, inc: int = INC) -> int:
+    """The earliest origin (first projected day) the model can run from: ``known_both`` reads the
+    ``inc`` days before it, and a calibration also projects from ``CALIB_WINDOW`` days earlier.
+    Before that the history would be indexed from the end of the arrays (negative days)."""
+    return inc if case == "known_both" else inc + CALIB_WINDOW
+
+
 def calibrate(c: GroupCounts, case: str, origin: int, p1_true: float | None = None,
               p2_true: float | None = None, contacts: str = "avg5", inc: int = INC,
               gamma: float = 1 / DURATION) -> tuple[float, float]:
@@ -253,6 +276,11 @@ def run_compartmental(c: GroupCounts, cases=("known_both",), p1_true: float | No
     stops the projection reading recorded contacts after day ``o - 1``."""
     if exposure != "pooled" and set(cases) != {"known_both"}:
         raise ValueError("per-group exposure is available for known_both only")
+    for case in cases:
+        if case in CASES and first_origin < min_origin(case, inc):
+            raise ValueError(f"case {case!r}: the first origin must be day "
+                             f"{min_origin(case, inc)} or later (it needs that much history); "
+                             f"got {first_origin}")
     H = max(horizons)
     rows = []
     for case in cases:

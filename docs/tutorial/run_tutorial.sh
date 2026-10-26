@@ -9,7 +9,7 @@
 # Docker image and checks the CSVs against docs/tutorial/outputs/.
 set -euo pipefail
 
-IMAGE="${IMAGE:-ghcr.io/nuzla/epiinfer:0.2.0}"
+IMAGE="${IMAGE:-ghcr.io/nuzla/epiinfer:0.2.1}"
 WORK="${WORK:-$PWD/tutorial-work}"
 mkdir -p "$WORK/data" "$WORK/results"
 WORK="$(cd "$WORK" && pwd)"

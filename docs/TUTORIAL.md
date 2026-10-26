@@ -53,7 +53,7 @@ docker --version
 Pull the released image (it works on Intel/AMD and ARM, including Apple silicon):
 
 ```bash
-docker pull ghcr.io/nuzla/epiinfer:0.2.0
+docker pull ghcr.io/nuzla/epiinfer:0.2.1
 ```
 
 Or build it from a checkout of this repository:
@@ -61,7 +61,7 @@ Or build it from a checkout of this repository:
 ```bash
 git clone https://github.com/nuzla/epiinfer.git
 cd epiinfer
-docker build -f docker/Dockerfile -t ghcr.io/nuzla/epiinfer:0.2.0 .
+docker build -f docker/Dockerfile -t ghcr.io/nuzla/epiinfer:0.2.1 .
 ```
 
 ### Make a working folder and a shortcut
@@ -76,7 +76,7 @@ The shell function `epi` runs one `epiinfer` command in a fresh container:
 ```bash
 epi() { docker run --rm --user "$(id -u):$(id -g)" \
           -v "$PWD/data:/data" -v "$PWD/results:/work/results" \
-          ghcr.io/nuzla/epiinfer:0.2.0 "$@"; }
+          ghcr.io/nuzla/epiinfer:0.2.1 "$@"; }
 ```
 
 How the pieces fit together:
@@ -98,7 +98,7 @@ epi --version
 ```
 
 ```text
-epiinfer 0.2.0
+epiinfer 0.2.1
 ```
 
 ---
@@ -510,6 +510,7 @@ epi run --data /data/my_data --method unknown_both --duration 7 --rec-duration 7
 | `--engine` | `final`, `contact` (needs state A) or `compartmental` (needs the per-group count files) | `final` |
 | `--seed`, `--num-sims` | random seed; simulated futures per forecast | 0; 30 |
 | `--start-eval`, `--last-origin`, `--horizons` | back-test origins and horizons | 25; 79; 1 5 10 20 |
+| `--max-day` | `run` only: use the days up to this one. Raise it (with `--last-origin`) to back-test data longer than 100 days; `forecast` always uses every day | 100 |
 
 Set `--inc`, `--duration` and `--rec-duration` to what is known about your disease. The
 model does not estimate them.
@@ -551,7 +552,7 @@ What reproduces and what does not, and why, is in [PAPER_VS_CODE.md](PAPER_VS_CO
 On a cluster without Docker, convert the image once and replace `epi` with:
 
 ```bash
-apptainer pull epiinfer.sif docker://ghcr.io/nuzla/epiinfer:0.2.0
+apptainer pull epiinfer.sif docker://ghcr.io/nuzla/epiinfer:0.2.1
 epi() { apptainer run --bind "$PWD/data:/data" epiinfer.sif "$@"; }
 ```
 
@@ -567,7 +568,11 @@ Run from the folder that holds `data/` and `results/`. Apptainer runs as you, so
   your computer.
 - **`from_day must be between ...`.** Calibration needs at least 22 observed days (both
   rates unknown) before the forecast origin.
-- **Numbers differ from this page.** Check `epi --version` says 0.2.0 and that you kept
+- **`the first forecast origin must be day 22 or later`.** The same limit for `run`: use
+  `--start-eval 22` or higher (25 is the default).
+- **`no forecast could be scored`.** The data is too short for the `--start-eval` and
+  `--horizons` you gave. `describe` shows how many days it has.
+- **Numbers differ from this page.** Check `epi --version` says 0.2.1 and that you kept
   `--seed 123` for `simulate`. CI compares every number on this page with the image on
   every change.
 - **Slow.** The 2025 engine's back-test is the slow step (minutes). Give Docker Desktop

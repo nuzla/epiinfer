@@ -25,6 +25,13 @@ jobs:
         if: matrix.python == '3.13'
       - run: uv build
         if: matrix.python == '3.13'
+      - name: the sdist carries everything the tests need (run the suite from it)
+        if: matrix.python == '3.13'
+        run: |
+          mkdir "$RUNNER_TEMP/sdist"
+          tar xzf dist/epiinfer-*.tar.gz -C "$RUNNER_TEMP/sdist"
+          cd "$RUNNER_TEMP"/sdist/epiinfer-*/
+          uv run --locked --all-extras pytest -q
   workflow-lint:
     runs-on: ubuntu-latest
     steps:

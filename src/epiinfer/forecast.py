@@ -28,6 +28,11 @@ from .metrics import fractional_rmse, relative_rmse, rmse
 
 log = logging.getLogger("epiinfer")
 
+#: columns of ``ForecastResult.rows`` (also when nothing could be scored) and of ``summary()``
+ROW_COLUMNS = ["group", "horizon", "current_day", "target_day", "predicted", "actual",
+               "p1_used", "p2_used"]
+SUMMARY_COLUMNS = ["dataset", "method", "group", "horizon", "n", "rmse", "frmse", "frmse_rel"]
+
 
 def sim_rng(seed: int, day: int, sim: int) -> np.random.RandomState:
     """Independent stream per (seed, forecast day, trajectory): results do not depend
@@ -61,6 +66,16 @@ def _graph_until(cfg: Config, origin: int) -> int | None:
 def _check_method(method: str) -> None:
     if method not in METHODS:
         raise ValueError(f"unknown method {method!r}; choose from {METHODS}")
+
+
+def _need_presymptomatic(data: Dataset) -> None:
+    """The 2025 engine seeds every forecast with who is in A. Without a single A record it
+    would silently forecast that nobody new gets infected (a flat, zero-width band)."""
+    if not any(data.asymp_on.get(d) for d in data.all_days):
+        raise ValueError(
+            "the contact engine needs the pre-symptomatic state (state 1 in "
+            "individual_day_state.csv), and this dataset records none. Use the default final "
+            "engine instead (--engine final): it needs only symptomatic and recovered people.")
 
 
 def estimate_rates(method, model, data, cfg, day, prev_p1, prev_p2, na, ni):
@@ -110,7 +125,8 @@ class ForecastResult:
     def summary(self) -> pd.DataFrame:
         """RMSE per group and horizon, with both fRMSE definitions the paper has used:
         ``frmse`` = RMSE / mean(actual) (2025 tables) and ``frmse_rel`` = root mean squared
-        relative error over targets with a non-zero actual (October 2026, Tables 10-13)."""
+        relative error over targets with a non-zero actual (October 2026, Tables 10-13).
+        Empty (with its columns) when no forecast could be scored."""
         out = []
         for grp in [*self.age_labels, "ALL"]:
             sub = self.rows[self.rows["group"] == grp]
@@ -122,7 +138,7 @@ class ForecastResult:
                 out.append({"dataset": self.dataset, "method": self.method, "group": grp,
                             "horizon": h, "n": len(s), "rmse": rmse(p, a),
                             "frmse": fractional_rmse(p, a), "frmse_rel": relative_rmse(p, a)})
-        return pd.DataFrame(out)
+        return pd.DataFrame(out, columns=SUMMARY_COLUMNS)
 
 
 def rolling_forecast(model, data: Dataset, method: str, cfg: Config, quiet: bool = False
@@ -130,6 +146,7 @@ def rolling_forecast(model, data: Dataset, method: str, cfg: Config, quiet: bool
     """Walk forward day by day: estimate rates, project ``cfg.num_sims`` trajectories to the
     furthest horizon, average, and record predicted-vs-actual per horizon."""
     _check_method(method)
+    _need_presymptomatic(data)
     na, ni = data.transitions("strict" if method == EMPIRICAL_METHOD else "diff")
     n = model.n_groups
     labels = data.age_labels
@@ -140,6 +157,12 @@ def rolling_forecast(model, data: Dataset, method: str, cfg: Config, quiet: bool
         start = max(model.inc + model.duration + 1, max_day - 10)
         log.info("data ends day %s; lowering start_eval to %s", last_day, start)
 
+    if method in ("known_p1", "known_p2", "unknown_both") and start < model.inc + model.duration:
+        # earlier, the calibration window is empty, every candidate scores inf and the "best"
+        # rate would silently be the last grid value
+        raise ValueError(f"method {method!r} needs start_eval >= inc + duration = "
+                         f"{model.inc + model.duration} (calibration needs that much history); "
+                         f"got {start}")
     lookback = _lookback(method, model)
     use_threads = cfg.mc_threads > 1 and cfg.num_sims > 1
     pool = ThreadPoolExecutor(max_workers=min(cfg.mc_threads, cfg.num_sims)) if use_threads else None
@@ -175,7 +198,8 @@ def rolling_forecast(model, data: Dataset, method: str, cfg: Config, quiet: bool
     finally:
         if pool is not None:
             pool.shutdown(wait=True)
-    return ForecastResult(method, data.name, cfg, pd.DataFrame(rows), pd.DataFrame(rates), labels)
+    return ForecastResult(method, data.name, cfg, pd.DataFrame(rows, columns=ROW_COLUMNS),
+                          pd.DataFrame(rates), labels)
 
 
 def default_config(method: str, engine: str | None = None) -> Config:
@@ -233,19 +257,20 @@ def _scalar_truth(cfg: Config, method: str) -> tuple[float | None, float | None]
     return p1, p2
 
 
-def _final_data(data, cfg: Config):
+def _final_data(data, max_day: int | None):
+    """``max_day``: read only the days up to it (a back-test's protocol); ``None``: all days."""
     from .final import FinalData
     if isinstance(data, FinalData):
         return data
     if isinstance(data, Dataset):
         return FinalData.from_dataset(data)
-    return FinalData.from_folder(data, max_day=cfg.max_day)
+    return FinalData.from_folder(data, max_day=max_day)
 
 
 def _run_final(data, method: str, cfg: Config) -> ForecastResult:
     from .final import run_final
     name = data.name if isinstance(data, Dataset) else Path(str(data)).name
-    fd = _final_data(data, cfg)
+    fd = _final_data(data, cfg.max_day)
     p1, p2 = _scalar_truth(cfg, method)
     settings = final_settings(cfg)
     pred, _ = run_final(fd, (method,), p1, p2, settings, last_origin=cfg.last_origin)
@@ -253,27 +278,34 @@ def _run_final(data, method: str, cfg: Config) -> ForecastResult:
                          "target_day": pred["target_day"], "predicted": pred["predicted"],
                          "actual": pred["actual"], "p1_used": pred["p1_used"],
                          "p2_used": pred["p2_used"]}) if len(pred) else pd.DataFrame(
-        columns=["group", "horizon", "current_day", "target_day", "predicted", "actual",
-                 "p1_used", "p2_used"])
+        columns=ROW_COLUMNS)
     rates = (rows[["current_day", "p1_used", "p2_used"]].drop_duplicates("current_day")
              .rename(columns={"current_day": "day", "p1_used": "p1", "p2_used": "p2"})
              .reset_index(drop=True))
     return ForecastResult(method, name, cfg, rows, rates, [])
 
 
+def _load_until(from_day, horizon: int) -> int | None:
+    """Days a one-shot forecast reads: those up to ``from_day + horizon`` (the observed part of
+    the forecast window is shown as ``actual``), or all of them when forecasting from the end.
+    ``Config.max_day`` limits back-tests only; applying it here made data longer than 100 days
+    be forecast from day 100."""
+    return None if from_day is None else int(from_day) + int(horizon)
+
+
 def _forecast_final(data, horizon: int, method: str, cfg: Config, from_day) -> pd.DataFrame:
-    from .final import FinalCore, calibrate_at
-    fd = _final_data(data, cfg)
+    from .final import FinalCore, calibrate_at, first_origin
+    if horizon < 1:
+        raise ValueError("horizon must be >= 1")
+    fd = _final_data(data, _load_until(from_day, horizon))
     p1t, p2t = _scalar_truth(cfg, method)
     settings = final_settings(cfg)
     last = fd.T - 1
     day = last if from_day is None else int(from_day)
-    first = (2 * cfg.inc + 1 + cfg.score_horizon) if method != "known_both" else cfg.inc
+    first = first_origin(method, settings)
     if not first <= day <= last:
         raise ValueError(f"from_day must be between {first} and the last observed day {last}; "
                          f"got {day}")
-    if horizon < 1:
-        raise ValueError("horizon must be >= 1")
     p1, p2 = calibrate_at(fd, method, day, p1t, p2t, settings)
     trajs = FinalCore(fd, settings).trajectories(day, p1, p2, horizon, cfg.num_sims,
                                                   seed=day * 104729 + settings.seed_offset)
@@ -289,33 +321,37 @@ def _forecast_final(data, horizon: int, method: str, cfg: Config, from_day) -> p
 
 
 # ---- compartmental engine (the earlier EpiInfer) -------------------------------------------
-def _group_counts(data, cfg: Config):
+def _group_counts(data, max_day: int | None):
+    """``max_day``: read only the days up to it (a back-test's protocol); ``None``: all days."""
     from .compartmental import GroupCounts
     if isinstance(data, GroupCounts):
         return data
     if isinstance(data, Dataset):
         raise TypeError("the compartmental engine reads the dataset folder; pass its path")
-    return GroupCounts.from_folder(data, max_day=cfg.max_day)
+    return GroupCounts.from_folder(data, max_day=max_day)
 
 
 def _run_compartmental(data, method: str, cfg: Config) -> ForecastResult:
     """Origins are the last observed day, as in the other engines: the notebooks' origin
     ``o`` (the first projected day) is ``current_day + 1``."""
-    from .compartmental import run_compartmental
+    from .compartmental import min_origin, run_compartmental
     name = Path(str(data)).name
-    gc = _group_counts(data, cfg)
+    need = min_origin(method, cfg.inc) - 1               # an origin o is current_day + 1
+    if cfg.start_eval < need:
+        raise ValueError(f"method {method!r}: start_eval must be {need} or later for the "
+                         f"compartmental engine (inc days of history, plus a 5-day calibration "
+                         f"window when a rate is searched); got {cfg.start_eval}")
+    gc = _group_counts(data, cfg.max_day)
     p1, p2 = _scalar_truth(cfg, method)
     last = cfg.last_origin if cfg.last_origin is not None else cfg.max_day - max(cfg.horizons) - 1
     pred = run_compartmental(gc, (method,), p1, p2, tuple(h - 1 for h in cfg.horizons),
                              cfg.start_eval + 1, last + 1, cfg.group_contacts, cfg.inc,
                              1 / cfg.duration, freeze=cfg.contacts == "frozen")
-    cols = ["group", "horizon", "current_day", "target_day", "predicted", "actual",
-            "p1_used", "p2_used"]
     rows = pd.DataFrame({"group": "ALL", "horizon": pred["horizon"] + 1,
                          "current_day": pred["origin"] - 1, "target_day": pred["target_day"],
                          "predicted": pred["predicted"], "actual": pred["actual"],
                          "p1_used": pred["p1_used"], "p2_used": pred["p2_used"]}
-                        )[cols] if len(pred) else pd.DataFrame(columns=cols)
+                        )[ROW_COLUMNS] if len(pred) else pd.DataFrame(columns=ROW_COLUMNS)
     rates = (rows[["current_day", "p1_used", "p2_used"]].drop_duplicates("current_day")
              .rename(columns={"current_day": "day", "p1_used": "p1", "p2_used": "p2"})
              .reset_index(drop=True))
@@ -325,7 +361,9 @@ def _run_compartmental(data, method: str, cfg: Config) -> ForecastResult:
 def _forecast_compartmental(data, horizon: int, method: str, cfg: Config, from_day
                             ) -> pd.DataFrame:
     from .compartmental import CALIB_WINDOW, calibrate, simulate
-    gc = _group_counts(data, cfg)
+    if horizon < 1:
+        raise ValueError("horizon must be >= 1")
+    gc = _group_counts(data, _load_until(from_day, horizon))
     p1t, p2t = _scalar_truth(cfg, method)
     last = gc.days - 1
     day = last if from_day is None else int(from_day)
@@ -333,8 +371,6 @@ def _forecast_compartmental(data, horizon: int, method: str, cfg: Config, from_d
     if not first <= day <= last:
         raise ValueError(f"from_day must be between {first} and the last observed day {last}; "
                          f"got {day}")
-    if horizon < 1:
-        raise ValueError("horizon must be >= 1")
     p1, p2 = calibrate(gc, method, day + 1, p1t, p2t, cfg.group_contacts, cfg.inc,
                        1 / cfg.duration)
     sim = simulate(gc, p1, p2, day + 1, horizon, cfg.group_contacts, cfg.inc, 1 / cfg.duration,
@@ -373,7 +409,8 @@ def forecast(data, horizon: int = 14, method: str = "unknown_both",
              **overrides) -> pd.DataFrame:
     """Forecast symptomatic counts for the ``horizon`` days after ``from_day``.
 
-    ``from_day`` defaults to the last observed day; contacts after it are never used. Returns
+    ``from_day`` defaults to the last observed day of the whole dataset (``Config.max_day``
+    limits back-tests, not forecasts); contacts after it are never used. Returns
     one row per (group, target day) with the Monte-Carlo ``mean`` and the 10th/90th percentile
     across trajectories, plus the ``actual`` count where the data already has it (NaN for
     genuine future days). Engine selection as in :func:`run`.
@@ -393,6 +430,7 @@ def forecast(data, horizon: int = 14, method: str = "unknown_both",
         return _forecast_compartmental(data, horizon, method, cfg, from_day)
     if not isinstance(data, Dataset):
         data = load_dataset(data)
+    _need_presymptomatic(data)
     model = build_model(data, cfg)
     na, ni = data.transitions("strict" if method == EMPIRICAL_METHOD else "diff")
     last = max(data.all_days)

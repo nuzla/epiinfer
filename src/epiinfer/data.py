@@ -112,8 +112,12 @@ def _build_age_of(d: Path, pop_total, pop_df, df_status) -> np.ndarray:
                 raise DataFormatError(f"{explicit.name}: age groups {unknown} are not in "
                                       f"age_group_population.csv {labels}")
             groups = groups.astype(str).map(index)
+        ids = m["id"].to_numpy()
+        if len(ids) and (ids.min() < 0 or ids.max() >= pop_total):
+            raise DataFormatError(f"{explicit.name}: ids must be 0..{pop_total - 1} (the "
+                                  f"population), found [{ids.min()}, {ids.max()}]")
         age_of = np.full(pop_total, -1, dtype=np.int64)
-        age_of[m["id"].to_numpy()] = groups.to_numpy()
+        age_of[ids] = groups.to_numpy()
         log.info("id->age: individual_age_group.csv")
         return age_of
     if "age" in df_status.columns:
@@ -182,7 +186,7 @@ def _read_until(path: Path, columns: tuple[str, ...], max_day: int | None) -> pd
         return _require(path, columns)
     _require_header(path, columns)
     parts = [c[c["day"] <= max_day] for c in pd.read_csv(path, chunksize=2_000_000)]
-    return pd.concat(parts, ignore_index=True)
+    return pd.concat(parts, ignore_index=True) if parts else pd.read_csv(path, nrows=0)
 
 
 def _require_header(path: Path, columns: tuple[str, ...]) -> None:
@@ -225,9 +229,14 @@ def load_dataset(path: str | Path, name: str | None = None, max_day: int | None 
     if states_total is not None and max_day is not None and "day" in states_total.columns:
         states_total = states_total[states_total["day"] <= max_day].reset_index(drop=True)
     pop_total = int(pop_df["population"].sum())
+    if df_status.empty:
+        raise DataFormatError("individual_day_state.csv has no rows"
+                              + (f" up to day {max_day}" if max_day is not None else ""))
     for fname, frame, cols in (("individual_day_state.csv", df_status, ("id",)),
                                ("timed_edges.csv", df_contacts, ("i", "j"))):
         for c in cols:
+            if frame.empty:                          # a dataset may have no contacts at all
+                continue
             lo, hi = int(frame[c].min()), int(frame[c].max())
             if lo < 0 or hi >= pop_total:
                 raise DataFormatError(

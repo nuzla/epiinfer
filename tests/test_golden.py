@@ -18,6 +18,7 @@ from epiinfer.forecast import build_model
 # change (a different window or the missing clip moves RMSE by percents).
 FLOAT_TOL = 1e-12
 HW_TOL = 1e-4
+ARIMA_TOL = 1e-4        # measured platform differences are ~1e-9; a wrong order moves it by percents
 
 
 def _sets(d):
@@ -112,3 +113,21 @@ def test_holt_winters_matches_authors_notebook(data, golden):
     assert got.keys() == golden["holt_winters_notebook"].keys()
     for h, want in golden["holt_winters_notebook"].items():
         assert got[h] == pytest.approx(want, rel=HW_TOL, abs=0), h
+
+
+def test_arima_matches_pinned_values(data):
+    """ARIMA(1,1,1) on the demo data. The same code reproduces the paper's ARIMA columns to
+    0.01 on the paper's data (the EPIINFER_PAPER_DATA tests), but that data is absent in CI, so
+    changing the model order or the fit would go unnoticed there. These values pin it. (Not a
+    fixture from the authors' notebook: its ARIMA code is the one-line fit used here.)"""
+    pytest.importorskip("statsmodels")
+    from epiinfer.baselines import rolling_baseline
+    df = rolling_baseline(data, "arima", horizons=(1, 5, 10, 20)).set_index("horizon")
+    assert df["n"].tolist() == [20, 16, 11, 1]
+    for h, want in {1: 3.7326204808216215, 5: 5.993318739968428, 10: 6.879549284757477,
+                    20: 17.33328075090658}.items():
+        assert df.loc[h, "rmse"] == pytest.approx(want, rel=ARIMA_TOL), h
+    paper_window = rolling_baseline(data, "arima", horizons=(1, 5), start_eval=10,
+                                    last_origin=30).set_index("horizon")
+    assert paper_window.loc[1, "rmse"] == pytest.approx(3.617473143533096, rel=ARIMA_TOL)
+    assert paper_window.loc[5, "rmse"] == pytest.approx(20.41125942158643, rel=ARIMA_TOL)

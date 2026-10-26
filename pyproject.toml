@@ -4,7 +4,7 @@ build-backend = "hatchling.build"
 
 [project]
 name = "epiinfer"
-version = "0.2.0"
+version = "0.2.1"
 description = "EpiInfer-CONTACT: forecasting infection counts in epidemics from contact-tracing data (reproduction code for the Algorithms 2025 paper)"
 readme = "README.md"
 requires-python = ">=3.11"
@@ -31,9 +31,10 @@ epiinfer = "epiinfer.cli:main"
 packages = ["src/epiinfer"]
 
 [tool.hatch.build.targets.sdist]
-# everything needed to run the test suite from the sdist alone
-include = ["src/epiinfer", "tests", "tools", "examples", "docs", "README.md", "LICENSE", "CHANGELOG.md",
-           "CITATION.cff", "pyproject.toml", "uv.lock", ".python-version"]
+# everything needed to run the test suite from the sdist alone (CI runs it from the sdist:
+# tests/test_docker_files.py reads docker/ and .github/)
+include = ["src/epiinfer", "tests", "tools", "examples", "docs", "docker", ".github", "README.md",
+           "LICENSE", "CHANGELOG.md", "CITATION.cff", "pyproject.toml", "uv.lock", ".python-version"]
 
 [tool.ruff]
 line-length = 110

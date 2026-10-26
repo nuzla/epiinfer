@@ -161,8 +161,10 @@ The same notebook defines "fractional RMSE" differently from the rest of the pap
 - Notebook: the RMSE of the relative errors, (pred − actual) / actual.
 - Everywhere else: RMSE / mean(actual).
 
-The library uses RMSE / mean(actual) throughout. `reproduce` checks each dataset's identity
-(people, days, peak), so mixing datasets now prints a warning.
+The library reports RMSE / mean(actual) as `frmse` and, in the engines' summaries, the notebook's
+definition as `frmse_rel` (the October 2026 paper adopts it for Tables 10–13; the baselines
+report `frmse` only). `reproduce` checks each dataset's identity (people, days, peak), so mixing
+datasets now prints a warning.
 
 ## 6. Smaller differences
 

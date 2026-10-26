@@ -77,6 +77,14 @@ def simulate(cfg: AgeMixConfig | None = None) -> dict:
     sizes = np.asarray(cfg.group_sizes, int)
     p1 = np.asarray(cfg.p1, float)
     p2 = np.asarray(cfg.p2, float)
+    if C.ndim != 2 or C.shape[0] != C.shape[1]:
+        raise ValueError(f"the contact matrix must be square, got shape {C.shape}")
+    if len(sizes) > C.shape[0]:
+        raise ValueError(f"{len(sizes)} age groups but the contact matrix covers {C.shape[0]}; "
+                         f"the built-in matrices have 3 groups (pass a larger `contact` matrix "
+                         f"through the Python API)")
+    if len(p1) < len(sizes) or len(p2) < len(sizes):
+        raise ValueError(f"p1 and p2 need one value per age group ({len(sizes)})")
     group_ids = np.repeat(np.arange(len(sizes)), sizes)
     n = group_ids.size
 
@@ -143,6 +151,8 @@ def write_dataset(sim: dict, out: str | Path) -> Path:
     hist, edges, gid, states = sim["hist"], sim["edges"], sim["group_ids"], sim["states"]
     n_days, n = states.shape
     n_groups = len(cfg.group_sizes)
+    labels = AGE_LABELS[:n_groups] if n_groups <= len(AGE_LABELS) else [
+        f"group{g}" for g in range(n_groups)]
 
     pd.DataFrame(hist, columns=list("SAIR")).assign(day=np.arange(n_days)).to_csv(
         out / "states_total.csv", index=False)
@@ -150,7 +160,7 @@ def write_dataset(sim: dict, out: str | Path) -> Path:
     pd.DataFrame({"id": np.tile(np.arange(n), n_days), "day": np.repeat(np.arange(n_days), n),
                   "state": states.reshape(-1)}).to_csv(out / "individual_day_state.csv", index=False)
     sizes = np.asarray(cfg.group_sizes)
-    pd.DataFrame({"age_group": AGE_LABELS[:n_groups], "population": sizes,
+    pd.DataFrame({"age_group": labels, "population": sizes,
                   "props": sizes / sizes.sum()}).to_csv(out / "age_group_population.csv", index=False)
     pd.DataFrame({"id": np.arange(n), "age_group": gid}).to_csv(
         out / "individual_age_group.csv", index=False)
@@ -159,7 +169,7 @@ def write_dataset(sim: dict, out: str | Path) -> Path:
     pd.DataFrame({"day": np.repeat(np.arange(n_days), n_groups),
                   "age": np.tile(np.arange(n_groups), n_days),
                   "infected": inf.reshape(-1),
-                  "age_group": np.tile(AGE_LABELS[:n_groups], n_days)}).to_csv(
+                  "age_group": np.tile(labels, n_days)}).to_csv(
         out / "daily_group_infected.csv", index=False)
 
     e = pd.DataFrame(edges, columns=["day", "i", "j"])

@@ -30,8 +30,9 @@ a day's records also counts as neither that day. The population size is the sum 
 `age_group_population.csv` if present, otherwise the largest id + 1.
 
 The **contact engine** is the 2025 code behind the earlier tables. It is seeded with who was
-in A on recent days, so it needs state 1 recorded. Simulators provide it; real data usually
-do not. It forecasts each age group as well as the total.
+in A on recent days, so it needs state 1 recorded (it refuses a dataset that records none:
+without it the forecast would silently say that nobody new gets infected). Simulators provide
+it; real data usually do not. It forecasts each age group as well as the total.
 
 The **compartmental engine** is EpiInfer, the earlier model the paper compares against. It
 needs no individual records and no contact list: only daily counts per age group (people
@@ -40,8 +41,10 @@ surveillance data. In `daily_group_avg_contacts.csv` a missing day repeats the p
 
 `epiinfer describe --data FOLDER` tells you which engines a folder supports.
 
-Every day from 0 to the last day should be present in `individual_day_state.csv`.
-`daily_group_infected.csv` may omit zero counts.
+Every day from 0 to the last day should be present in `individual_day_state.csv`. The last day
+that has any row is taken as the last observed day, so if you write only the I and R rows,
+make sure the final day has at least one row (any state), or a forecast will start earlier
+than you expect. `daily_group_infected.csv` may omit zero counts.
 
 ## A minimal dataset for the final engine
 
@@ -89,7 +92,9 @@ into A by subtraction; the model script itself does not. See `docs/PAPER_VS_CODE
 
 * the required files and columns exist;
 * ids in both the state file and the edge list lie in `0 … N-1`;
-* contact engine: every id gets an age group in range;
+* contact engine: every id gets an age group in range, and the ids in `individual_age_group.csv`
+  lie in `0 … N-1`;
+* compartmental engine: the columns each of its four files needs (a missing one is named);
 * contact engine: the susceptible code is confirmed against `states_total.csv` (when
   present);
 * contact engine: mean day-1 contacts per group is compared with

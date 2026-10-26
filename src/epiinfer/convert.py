@@ -23,6 +23,8 @@ def cases_to_dataset(cases: pd.DataFrame | str | Path, contacts: pd.DataFrame | 
     case is symptomatic (state 2) for ``duration`` days from onset, then recovered (state 3)
     for ``rec_duration`` days. Day 0 is the earliest date in either list. Returns a summary.
     """
+    if duration < 1 or rec_duration < 0:
+        raise ValueError("duration must be >= 1 day and rec_duration >= 0")
     if not isinstance(cases, pd.DataFrame):
         cases = pd.read_csv(cases)
     if not isinstance(contacts, pd.DataFrame):
@@ -32,6 +34,10 @@ def cases_to_dataset(cases: pd.DataFrame | str | Path, contacts: pd.DataFrame | 
         missing = [c for c in cols if c not in df.columns]
         if missing:
             raise ValueError(f"{name} needs columns {cols}; missing {missing}")
+        blank = df[list(cols)].isna().any(axis=1)
+        if blank.any():
+            raise ValueError(f"{name}: {int(blank.sum())} row(s) have a missing value in "
+                             f"{cols}, e.g. row(s) {df.index[blank][:5].tolist()}")
     onset = pd.to_datetime(cases["onset"])
     date = pd.to_datetime(contacts["date"])
     people = sorted(set(cases["person"]) | set(contacts["a"]) | set(contacts["b"]), key=str)
@@ -41,10 +47,15 @@ def cases_to_dataset(cases: pd.DataFrame | str | Path, contacts: pd.DataFrame | 
     n = len(people)
 
     state = np.zeros((n_days, n), dtype=np.int8)       # 0 = neither symptomatic nor recovered
-    for person, start in zip(cases["person"], onset, strict=True):
-        d, i = (start - day0).days, index[person]
-        state[d:d + duration, i] = 2
+    spans = [((start - day0).days, index[person])
+             for person, start in zip(cases["person"], onset, strict=True)]
+    # All recovered windows first, then the symptomatic ones: a person with several episodes
+    # (re-infection) must come out the same whatever the row order, and a later episode's
+    # symptomatic days must win over an earlier episode's recovered days.
+    for d, i in spans:
         state[d + duration:d + duration + rec_duration, i] = 3
+    for d, i in spans:
+        state[d:d + duration, i] = 2
 
     out = Path(out)
     out.mkdir(parents=True, exist_ok=True)

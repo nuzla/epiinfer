@@ -1,5 +1,53 @@
 # Changelog
 
+## 0.2.1
+
+Fixes from a review of 0.2.0. Each has a regression test in `tests/test_robustness.py`, which
+fails on the 0.2.0 code.
+
+- **`forecast` on a dataset longer than 100 days forecast from day 100.** The `final` and
+  `compartmental` engines applied the back-test limit `max_day` (100) to the data, so they
+  silently ignored everything after it, and `--from-day 110` was refused. `forecast` now reads
+  every day (and the contact engine already did). `run` still stops at `--max-day`, the paper's
+  protocol; the help text, README and tutorial now say so.
+- **`run` with `--start-eval` below 22** crashed with `TypeError: 'NoneType' object is not
+  subscriptable` (`unknown_both`) or silently used the first grid value (`known_p1`,
+  `known_p2`): there is no history to calibrate on. The final engine now refuses a first
+  origin without enough history (22 days when a rate is searched, `inc` for `known_both`); so
+  do the 2025 engine (`inc + duration`) and the compartmental one, whose earlier origins also
+  indexed days from the end of the arrays.
+- **The 2025 engine on data without pre-symptomatic records** (`--engine contact`, or
+  `empirical_p1`, on real-world-style data) returned a flat, zero-width "forecast" in which
+  nobody new gets infected (34 people tomorrow, where the default engine says 38). It now
+  refuses such data and points to the default engine; `describe` already listed `contact` as
+  unusable there.
+- **Nothing to score.** A run whose data is too short returned an empty table (the 2025 engine
+  raised `KeyError: 'group'`). `summary()` now always has its columns and `epiinfer run` says
+  why nothing was scored.
+- **`from-cases` lost an episode** when one person's rows were not sorted by onset: an earlier
+  episode's recovered days overwrote a later episode's first symptomatic day. It now gives the
+  same result in any row order, and rejects missing values.
+- **Known rates given as one number** (`p1_true=0.15`) raised `'float' object is not
+  iterable` in every engine; they are now accepted. `Config` and `FinalSettings` also reject
+  impossible values (`recalib_every=0`, a calibration window shorter than the score horizon,
+  rates outside (0, 1], a negative seed, an empty grid) instead of failing later.
+- **Clear errors.** The CLI prints data and option errors as one `epiinfer: ...` line (`-v`
+  keeps the traceback). Fixed bare `IndexError`, `ValueError` and `KeyError` from a simulation
+  with more age groups than its contact matrix, an `individual_age_group.csv` id outside the
+  population, a header-only contact list, a state file with no rows, `describe` on data in
+  which nobody is symptomatic, `plot-rmse --metric frmse_rel` on a baseline summary, and a
+  missing column in the compartmental engine's four files.
+- **The sdist did not contain `docker/` or `.github/`**, so `tests/test_docker_files.py` failed
+  when the suite was run from it, contrary to the comment in `pyproject.toml`. Both are
+  included now, and CI runs the whole suite from the built sdist.
+- **Tests.** Nothing pinned ARIMA(1,1,1) in CI (only the paper-data tests did), so a changed
+  model order went unnoticed; `test_arima_matches_pinned_values` pins it. The mutation check
+  now breaks 78 guards.
+- **Docs.** `tests/test_docs.py` checks that relative links resolve, that every version string
+  and image tag agrees, and that the tutorial page shows exactly the committed outputs.
+  Corrected the README's "within 8%" (8.3%) and the `frmse` note in `PAPER_VS_CODE.md`; the
+  example script now back-tests a whole dataset of any length.
+
 ## 0.2.0
 
 The October 2026 version of the paper, the earlier EpiInfer, and a Docker tutorial.

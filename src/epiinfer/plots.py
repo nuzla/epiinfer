@@ -115,6 +115,10 @@ def plot_rmse_by_horizon(summaries: dict, path, metric: str = "rmse",
     fig, ax = plt.subplots(figsize=(7, 4.2))
     ticks: set = set()
     for label, df in summaries.items():
+        if metric not in df.columns or "horizon" not in df.columns:
+            raise ValueError(f"{label!r}: the summary has no column {metric!r} (it has "
+                             f"{list(df.columns)}); frmse_rel is only in the summaries of "
+                             f"`epiinfer run`, not of `epiinfer baseline`")
         d = df[df["group"] == "ALL"] if "group" in df.columns else df
         d = d.sort_values("horizon")
         ax.plot(d["horizon"], d[metric], "o-", label=label)

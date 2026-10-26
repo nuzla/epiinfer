@@ -1,6 +1,6 @@
 """Configuration for a forecasting run.
 
-Two engines implement the two versions of the method:
+Three engines implement the three versions of the method:
 
 * ``engine="final"`` – the October 2026 paper (``abm_final.ipynb``, :mod:`epiinfer.final`):
   exposures rebuilt from infections (no pre-symptomatic data needed), recovered people return
@@ -78,12 +78,55 @@ class Config:
                              f"{self.group_contacts!r}")
         if self.contacts not in CONTACT_MODES:
             raise ValueError(f"contacts must be one of {CONTACT_MODES}, got {self.contacts!r}")
+        if self.contact_offset not in (0, 1):
+            raise ValueError(f"contact_offset must be 0 or 1, got {self.contact_offset!r}")
         if self.inc < 1 or self.duration < 1:
             raise ValueError("inc and duration must be >= 1 day")
+        if self.rec_duration < 0:
+            raise ValueError("rec_duration must be >= 0 days")
         if self.num_sims < 1:
             raise ValueError("num_sims must be >= 1")
+        if self.mc_threads < 1:
+            raise ValueError("mc_threads (--workers) must be >= 1")
+        if self.seed < 0:
+            raise ValueError("seed must be >= 0")
         if not self.horizons or min(self.horizons) < 1:
             raise ValueError("horizons must be positive integers")
+        if self.start_eval < 0 or self.max_day < 1:
+            raise ValueError("start_eval must be >= 0 and max_day >= 1")
+        if self.last_origin is not None and self.last_origin < 0:
+            raise ValueError("last_origin must be >= 0")
+        if not 0 < self.smoothing <= 1:
+            raise ValueError("smoothing must be in (0, 1]")
+        if self.calib_window < 1:
+            raise ValueError("calib_window must be >= 1 day")
+        for name in ("candidates", "final_grid"):
+            grid = getattr(self, name)
+            if not grid or not all(0 < g <= 1 for g in grid):
+                raise ValueError(f"{name} must be a non-empty list of rates in (0, 1]")
+        if self.recalib_every < 1:
+            raise ValueError("recalib_every must be >= 1")
+        if self.score_horizon < 1:
+            raise ValueError("score_horizon must be >= 1")
+        if self.final_calib_window < self.score_horizon:
+            raise ValueError("final_calib_window must be >= score_horizon: calibration scores "
+                             "the origins of the last final_calib_window days with "
+                             "score_horizon-day forecasts")
+        if self.lambda_damp < 0:
+            raise ValueError("lambda_damp must be >= 0")
+        # one number is accepted for a known rate and means a 1-tuple; reject impossible rates
+        for name, low_open in (("p1_true", False), ("p2_true", True)):
+            value = getattr(self, name)
+            if value is None:
+                continue
+            try:
+                rates = tuple(float(v) for v in value)
+            except TypeError:                               # a single number
+                rates = (float(value),)
+            if not rates or not all((0 < v if low_open else 0 <= v) and v <= 1 for v in rates):
+                raise ValueError(f"{name} must hold rates in {'(0, 1]' if low_open else '[0, 1]'}"
+                                 f", got {value!r}")
+            object.__setattr__(self, name, rates)
 
     def with_(self, **kw) -> Config:
         return replace(self, **kw)

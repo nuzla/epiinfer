@@ -55,6 +55,21 @@ class FinalSettings:
     recon_back: int | None = None   # default 4 * (inc + 1)
     seed_offset: int = 0            # 0 = the notebook's seeds; other values give other streams
 
+    def __post_init__(self):
+        if min(self.inc, self.inf_dur) < 1 or self.rec_dur < 0:
+            raise ValueError("inc and inf_dur must be >= 1 day and rec_dur >= 0")
+        if min(self.n_mc, self.score_h, self.recalib_every, self.eval_stride) < 1:
+            raise ValueError("n_mc, score_h, recalib_every and eval_stride must be >= 1")
+        if self.calib_window < self.score_h:
+            raise ValueError(f"calib_window ({self.calib_window}) must be >= score_h "
+                             f"({self.score_h}): no calibration forecast would fit in it")
+        if not self.horizons or min(self.horizons) < 1:
+            raise ValueError("horizons must be positive integers")
+        if not self.grid or not all(0 < g <= 1 for g in self.grid):
+            raise ValueError("grid must be a non-empty list of rates in (0, 1]")
+        if self.lam < 0:
+            raise ValueError("lam must be >= 0")
+
     @property
     def last_origin(self) -> int:
         return self.end_day - max(self.horizons) - 1
@@ -62,6 +77,26 @@ class FinalSettings:
     @property
     def back(self) -> int:
         return self.recon_back if self.recon_back is not None else 4 * (self.inc + 1)
+
+
+def first_origin(case: str, settings: FinalSettings) -> int:
+    """The earliest forecast origin with enough history for ``case``.
+
+    ``known_both`` only needs the exposure history rebuilt, which takes ``inc`` days. A case
+    that searches a rate scores ``score_h``-day forecasts launched from days >= ``2 * inc + 1``
+    and ending by the training day, so it needs ``2 * inc + 1 + score_h`` days; earlier, every
+    candidate scores ``inf`` and the "best" rate would be an arbitrary grid value.
+    """
+    return settings.inc if case == "known_both" else 2 * settings.inc + 1 + settings.score_h
+
+
+def _check_history(case: str, day: int, settings: FinalSettings, what: str) -> None:
+    need = first_origin(case, settings)
+    if day < need:
+        why = ("the exposure history needs inc days" if case == "known_both" else
+               f"calibration needs 2*inc + 1 + score_h = {need} days of history")
+        raise ValueError(f"case {case!r}: {what} must be day {need} or later ({why}); "
+                         f"got {day}")
 
 
 class FinalData:
@@ -111,6 +146,9 @@ class FinalData:
             raise DataFormatError(f"dataset folder not found: {d}")
         st = _read_until(d / "individual_day_state.csv", ("id", "day", "state"), max_day)
         ed = _read_until(d / "timed_edges.csv", ("day", "i", "j"), max_day)
+        if st.empty:
+            raise DataFormatError("individual_day_state.csv has no rows"
+                                  + (f" up to day {max_day}" if max_day is not None else ""))
         if n is None:
             pop = d / "age_group_population.csv"
             n = int(pd.read_csv(pop)["population"].sum()) if pop.exists() else int(st["id"].max()) + 1
@@ -305,6 +343,10 @@ def _check_cases(cases, p1_true, p2_true):
         if c in cases and ((need in ("both", "p1") and p1_true is None)
                            or (need in ("both", "p2") and p2_true is None)):
             raise ValueError(f"case {c!r} needs the true rate(s): pass p1_true / p2_true")
+    if p1_true is not None and not 0 <= p1_true <= 1:
+        raise ValueError(f"p1_true must be in [0, 1], got {p1_true}")
+    if p2_true is not None and not 0 < p2_true <= 1:       # p2 divides the cohort sizes
+        raise ValueError(f"p2_true must be in (0, 1], got {p2_true}")
 
 
 def run_final(data: FinalData, cases=CASES, p1_true: float | None = None,
@@ -318,6 +360,8 @@ def run_final(data: FinalData, cases=CASES, p1_true: float | None = None,
     """
     cases = tuple(cases)
     _check_cases(cases, p1_true, p2_true)
+    for c in cases:
+        _check_history(c, settings.start_day, settings, "the first forecast origin (start_eval)")
     core = FinalCore(data, settings)
     cal = FinalCalibrator(core)
     rows, trace = [], []
@@ -380,6 +424,7 @@ def calibrate_at(data: FinalData, case: str, day: int, p1_true=None, p2_true=Non
     """The rates the method would use for a forecast made on ``day`` (first calibration, so no
     damping); for ``known_both`` the given rates."""
     _check_cases((case,), p1_true, p2_true)
+    _check_history(case, day, settings, "the calibration day")
     if case == "known_both":
         return p1_true, p2_true
     return FinalCalibrator(FinalCore(data, settings)).best(case, day, p1_true, p2_true)

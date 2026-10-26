@@ -80,7 +80,7 @@ whom. `epiinfer from-cases` builds the folder from a case list and a contact lis
 | Tables 2–5 / 14, EpiInfer "both known" | `uv run epiinfer reproduce --table epiinfer_age_structured --data DIR` | **exact** |
 | Appendix A: EpiInfer | `uv run epiinfer reproduce --table appendix --scale 0.2 --methods epiinfer_old --data DIR` | **exact**, all 720 cells |
 | `tab:openabm-forecast` | `uv run epiinfer reproduce --table openabm --data DIR` | within 1% |
-| `tab:age_structured`, vs the authors' own run of the same code | `uv run epiinfer reproduce --table age_structured --data DIR` | all 16 cells within 8% |
+| `tab:age_structured`, vs the authors' own run of the same code | `uv run epiinfer reproduce --table age_structured --data DIR` | all 16 cells within 8.3% |
 | `tab:age_structured`, vs the published paper | (same command) | "both known" within 10%; the other modes differ (the paper reports a different run) |
 | ARIMA columns (age-structured, uniform) | `uv run epiinfer reproduce --table arima_age_structured` / `arima_uniform --data DIR` | exact, each on its own dataset |
 | Holt-Winters columns | `uv run epiinfer reproduce --table hw_age_structured` / `hw_uniform --data DIR` | day 1 within 1.5%, day 20 off by 12–19% |
@@ -127,8 +127,8 @@ it as an arbitrary non-root user, and runs the whole [tutorial](docs/TUTORIAL.md
 publishes one; see the repository's Packages page for the list.
 
 ```bash
-docker pull ghcr.io/nuzla/epiinfer:0.2.0
-docker tag  ghcr.io/nuzla/epiinfer:0.2.0 epiinfer      # the commands below call it "epiinfer"
+docker pull ghcr.io/nuzla/epiinfer:0.2.1
+docker tag  ghcr.io/nuzla/epiinfer:0.2.1 epiinfer      # the commands below call it "epiinfer"
 ```
 
 For a paper or a script, pin the exact image by digest, which is printed in each release's
@@ -230,7 +230,7 @@ Most HPC systems run [Apptainer](https://apptainer.org/) (formerly Singularity) 
 Docker. It converts the same image, with nothing extra to install:
 
 ```bash
-apptainer pull epiinfer.sif docker://ghcr.io/nuzla/epiinfer:0.2.0     # once; makes epiinfer.sif
+apptainer pull epiinfer.sif docker://ghcr.io/nuzla/epiinfer:0.2.1     # once; makes epiinfer.sif
 mkdir -p data results
 apptainer run epiinfer.sif --version
 apptainer run --bind "$PWD/data:/data" epiinfer.sif forecast --data /data/my_dataset --out results/forecast.csv
@@ -300,13 +300,16 @@ extra: `uv run epiinfer baseline --data DIR --which arima`.
 - `run` and `forecast` never use contact data after the forecast origin. Pass
   `contacts="recorded"` to reproduce the original scripts' look-ahead (contact and
   compartmental engines; the final engine has none).
+- `forecast` uses every day of the dataset and starts from its last day. `run` is a back-test
+  and uses the days up to `--max-day` (default 100, the paper's protocol, with origins 25–79);
+  raise `--max-day` (and `--last-origin`) to back-test a longer dataset.
 
 ## Development
 
 ```bash
 uv run --all-extras pytest -q                        # unit, golden and regression tests
 EPIINFER_PAPER_DATA=/path/to/data uv run --all-extras pytest -m paper  # vs the paper's data
-uv run --all-extras python tools/mutation_check.py   # breaks 54 guards; all must be caught
+uv run --all-extras python tools/mutation_check.py   # breaks key guards one at a time; all must be caught
 uv run ruff check .
 uv lock --check                                      # uv.lock matches pyproject.toml
 uv build                                             # sdist + wheel

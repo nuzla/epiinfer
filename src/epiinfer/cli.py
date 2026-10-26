@@ -9,6 +9,7 @@ from pathlib import Path
 
 from . import __version__
 from .config import CONTACT_MODES, ENGINES, METHODS
+from .data import DataFormatError
 from .reproduce.targets import TABLES
 
 DEMO = Path(__file__).parent / "demo_data"
@@ -65,9 +66,14 @@ def _build() -> argparse.ArgumentParser:
     p = sub.add_parser("run", help="rolling-origin back-test on a dataset")
     p.add_argument("--data", required=True)
     p.add_argument("--method", choices=METHODS, default="unknown_both")
-    p.add_argument("--start-eval", type=int, default=None)
-    p.add_argument("--max-day", type=int, default=None)
-    p.add_argument("--last-origin", type=int, default=None, help="last forecast origin")
+    p.add_argument("--start-eval", type=int, default=None,
+                   help="first forecast origin (default 25; the final engine needs at least 22 "
+                        "when it searches a rate)")
+    p.add_argument("--max-day", type=int, default=None,
+                   help="use only days up to this one (default 100, the paper's protocol); raise "
+                        "it to back-test a longer dataset. `forecast` always uses every day")
+    p.add_argument("--last-origin", type=int, default=None,
+                   help="last forecast origin (default: max-day - longest horizon - 1)")
     p.add_argument("--horizons", type=int, nargs="+", default=None)
     p.add_argument("--contacts", choices=CONTACT_MODES, default="frozen",
                    help="contact and compartmental engines: frozen (default) uses no future "
@@ -103,8 +109,9 @@ def _build() -> argparse.ArgumentParser:
     p.add_argument("--data", required=True)
     p.add_argument("--which", choices=["arima", "holt_winters"], default="arima")
     p.add_argument("--horizons", type=int, nargs="+", default=[1, 5, 10, 20])
-    p.add_argument("--start-eval", type=int, default=25)
-    p.add_argument("--max-day", type=int, default=100)
+    p.add_argument("--start-eval", type=int, default=25, help="first forecast origin")
+    p.add_argument("--max-day", type=int, default=100,
+                   help="use only days up to this one (default 100, the paper's protocol)")
     p.add_argument("--last-origin", type=int, default=None,
                    help="last forecast origin (paper's ARIMA column: --start-eval 10 "
                         "--last-origin 50)")
@@ -213,9 +220,15 @@ def _describe(args) -> int:
     states = pd.read_csv(st_path) if st_path.exists() else None
     if (d / "states_total.csv").exists():
         tot = pd.read_csv(d / "states_total.csv")
+        if not {"day", "I"} <= set(tot.columns):
+            raise SystemExit(f"{d / 'states_total.csv'}: needs the columns day and I; "
+                             f"has {list(tot.columns)}")
     elif states is not None:
         tot = (states.groupby(["day", "state"]).size().unstack(fill_value=0)
                .rename(columns={0: "S", 1: "A", 2: "I", 3: "R"}).reset_index())
+        for col in "SAIR":                           # a state nobody is ever in has no column
+            if col not in tot.columns:
+                tot[col] = 0
     else:
         raise SystemExit(f"{d}: needs states_total.csv or individual_day_state.csv")
     pop = d / "age_group_population.csv"
@@ -249,19 +262,24 @@ def _describe(args) -> int:
 
 
 def main(argv: list[str] | None = None) -> int:
+    args = _build().parse_args(argv)
+    logging.basicConfig(level=logging.INFO if args.verbose else logging.WARNING,
+                        format="%(message)s")
     try:
-        return _main(argv)
+        return _main(args)
     except ImportError as exc:                 # a missing optional extra: say which one
         if "install the extra" in str(exc):
             raise SystemExit(f"epiinfer: {exc}") from None
         raise
+    except (DataFormatError, FileNotFoundError) as exc:     # the user's data, not a bug
+        raise SystemExit(f"epiinfer: {exc}") from None
+    except ValueError as exc:                  # an option the method cannot use: one clear line
+        if args.verbose:                       # -v keeps the traceback for bug reports
+            raise
+        raise SystemExit(f"epiinfer: {exc}") from None
 
 
-def _main(argv: list[str] | None = None) -> int:
-    args = _build().parse_args(argv)
-    logging.basicConfig(level=logging.INFO if args.verbose else logging.WARNING,
-                        format="%(message)s")
-
+def _main(args: argparse.Namespace) -> int:
     if args.cmd == "demo":
         print(DEMO)
         return 0
@@ -354,6 +372,12 @@ def _main(argv: list[str] | None = None) -> int:
         if engine in ("contact", "compartmental"):
             over["contacts"] = args.contacts
         res = run(args.data, args.method, **over)
+        if res.rows.empty:
+            raise SystemExit(
+                "epiinfer: no forecast could be scored. The data is too short for these "
+                "settings: a forecast origin needs history before it and its target day needs "
+                "data after it. Check --start-eval, --horizons and --max-day against the number "
+                f"of days in the dataset (`epiinfer describe --data {args.data}`).")
         out = Path(args.out)
         out.mkdir(parents=True, exist_ok=True)
         res.rows.to_csv(out / f"predictions_{res.dataset}_{res.method}.csv", index=False)
