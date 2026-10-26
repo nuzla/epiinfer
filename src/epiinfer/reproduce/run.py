@@ -44,7 +44,18 @@ def check_dataset(table: str, data) -> str:
 def _run_method(table: str, data_dir: str, method: str, overrides: dict) -> list[dict]:
     spec = TABLES[table]
     max_day = overrides.get("max_day", 100)
-    if "baseline_window" in spec:                      # statistical baseline, own window
+    if "compartmental" in spec:                        # the earlier EpiInfer, deterministic
+        from ..compartmental import GroupCounts, run_compartmental, summarize
+        from ..config import PAPER
+        opt = spec["compartmental"]
+        dataset_check = check_dataset(table, curve_fingerprint(data_dir, max_day))
+        horizons = overrides["horizons"]
+        pred = run_compartmental(GroupCounts.from_folder(data_dir, max_day=max_day), (method,),
+                                 PAPER.p1_true, PAPER.p2_true, horizons, *opt["origins"],
+                                 contacts=opt["contacts"], exposure=opt["exposure"])
+        summ = summarize(pred).assign(group="ALL", frmse=lambda d: d["frmse_rel"])
+        contacts = opt["contacts"]
+    elif "baseline_window" in spec:                    # statistical baseline, own window
         from ..baselines import rolling_baseline
         dataset_check = check_dataset(table, curve_fingerprint(data_dir, max_day))
         first, last = spec["baseline_window"]
@@ -57,7 +68,7 @@ def _run_method(table: str, data_dir: str, method: str, overrides: dict) -> list
     else:
         data = load_dataset(data_dir, max_day=max_day)
         dataset_check = check_dataset(table, data)
-        cfg = default_config(method).with_(**overrides)
+        cfg = default_config(method, "contact").with_(**overrides)
         horizons = cfg.horizons
         summ = rolling_forecast(build_model(data, cfg), data, method, cfg).summary()
         contacts = cfg.contacts
@@ -87,7 +98,7 @@ def reproduce_table(table: str, data_dir: str | Path, quick: bool = False, seed:
                     num_sims: int | None = None, workers: int = 1,
                     horizons: tuple[int, ...] | None = None,
                     methods: tuple[str, ...] | None = None, contacts: str = "recorded",
-                    jobs: int = 1) -> pd.DataFrame:
+                    jobs: int = 1, contact_offset: int = 0) -> pd.DataFrame:
     """Re-run ``table`` on ``data_dir`` and return paper vs. measured values.
 
     ``contacts="recorded"`` (default) matches the code that produced the published numbers,
@@ -108,7 +119,7 @@ def reproduce_table(table: str, data_dir: str | Path, quick: bool = False, seed:
         raise ValueError(f"{table} has no published values for {unknown}; "
                          f"choose from {spec['methods']}")
     over: dict = {"seed": seed, "mc_threads": workers, "contacts": contacts,
-                  "horizons": horizons or (1, 5, 10, 20)}
+                  "horizons": horizons or (1, 5, 10, 20), "contact_offset": contact_offset}
     if quick:
         over.update(start_eval=30, max_day=50, num_sims=3)
     if num_sims:

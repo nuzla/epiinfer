@@ -67,3 +67,19 @@ jobs:
           ls results/summary_demo_data_empirical_p1.csv results/forecast_demo_data_empirical_p1.png
       - name: docker/run_all.sh end to end (demo steps; paper tables skipped, no data here)
         run: DATA="$PWD/data-ci" OUT="$PWD/results-ci" docker/run_all.sh
+  tutorial:
+    # docs/TUTORIAL.md, run inside the Docker image: its outputs must equal the committed ones
+    runs-on: ubuntu-latest
+    needs: test
+    steps:
+      - uses: actions/checkout@v4
+      - uses: astral-sh/setup-uv@v6
+        with: { version: "${{ env.UV_VERSION }}" }
+      - run: docker build -f docker/Dockerfile -t epiinfer:ci .
+      - name: run every tutorial command in the container
+        run: IMAGE=epiinfer:ci WORK="$PWD/tutorial-work" docs/tutorial/run_tutorial.sh
+      - uses: actions/upload-artifact@v4
+        if: always()
+        with: { name: tutorial-results, path: tutorial-work/results }
+      - name: outputs equal docs/tutorial/outputs
+        run: uv run --locked --no-dev python tools/compare_tutorial.py tutorial-work/results docs/tutorial/outputs

@@ -99,7 +99,8 @@ def mini_appendix(tmp_path):
 def test_reproduce_appendix_runs_and_compares(mini_appendix):
     pytest.importorskip("statsmodels")
     df = reproduce_appendix(mini_appendix, "0.2", quick=True, num_sims=2)
-    assert set(df["method"]) == {"arima", "contact"} and set(df["day"]) == set(range(1, 21))
+    assert set(df["method"]) == {"arima", "contact", "epiinfer_old"}
+    assert all(set(g["day"]) == set(range(1, 21)) for _, g in df.groupby("method"))
     assert df["paper_rmse"].notna().all() and np.isfinite(df["ratio"]).all()
     assert (df["p1"] == 0.12).all() and (df["p2"] == 0.05).all()
     only = reproduce_appendix(mini_appendix, "0.2", methods=("arima",))

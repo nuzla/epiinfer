@@ -7,10 +7,22 @@ packaged so that anyone can:
 1. **reproduce** the paper's tables, and
 2. **forecast** with their own contact-tracing data.
 
-Given who met whom each day, EpiInfer rolls an S → A → I → R epidemic forward on the
+Given who met whom each day, EpiInfer-contact rolls an S → A → I → R epidemic forward on the
 contact graph. Here A means infectious but not yet symptomatic, and I means symptomatic
 and isolated. It averages Monte-Carlo trajectories to forecast the number of symptomatic
-people, per age group and in total.
+people.
+
+**New here? Start with the [tutorial](docs/TUTORIAL.md).** It walks through a forecast in
+Docker step by step, with the exact output and plots you should get.
+
+The paper's numbers come from three versions of the code, and the library has an engine
+for each:
+
+| Engine | What it is | Needs |
+|---|---|---|
+| `final` (default) | the October 2026 method (`abm_final.ipynb`): rebuilds the pre-symptomatic history from infections, recovered people become susceptible again, periodic joint calibration | who is symptomatic or recovered each day, plus the contacts |
+| `contact` | the 2025 code behind most published tables | the above **plus** who is pre-symptomatic (state A), which real data rarely record |
+| `compartmental` | EpiInfer, the earlier model the paper compares against: deterministic, no contact list | daily counts per age group (symptomatic, average contacts) |
 
 ## Install
 
@@ -42,26 +54,31 @@ No Python on the host? Use [Docker](#docker) instead.
 
 ```bash
 uv run epiinfer demo                                   # path to a tiny bundled dataset
-uv run epiinfer forecast --data "$(uv run epiinfer demo)" --horizon 14
-uv run epiinfer run --data "$(uv run epiinfer demo)" --method unknown_both --start-eval 30 --plots
+uv run epiinfer describe --data "$(uv run epiinfer demo)"
+uv run epiinfer forecast --data "$(uv run epiinfer demo)" --horizon 14 --plot forecast.png
+uv run epiinfer run --data "$(uv run epiinfer demo)" --method unknown_both --max-day 46 \
+    --horizons 1 5 10 --plots
 ```
 
 ```python
 import epiinfer
-data = epiinfer.load_dataset("my_dataset/")
-epiinfer.forecast(data, horizon=14, inc=7, duration=7, seed=0)   # mean + 10-90% band
-epiinfer.run(data, "unknown_both", inc=7, duration=7).summary()  # back-test: RMSE, fRMSE
+epiinfer.forecast("my_dataset/", horizon=14, seed=0)           # mean + 10-90% band
+epiinfer.run("my_dataset/", "unknown_both").summary()           # back-test: RMSE, fRMSE
+epiinfer.run("my_dataset/", "unknown_both", engine="contact")   # the 2025 code instead
 ```
 
-Your data must be three CSV files; see [docs/DATA_FORMAT.md](docs/DATA_FORMAT.md). Read its
-note on the **A state** first. Like the code behind the paper, the model must be told who
-is pre-symptomatic, and real contact-tracing data usually do not record that.
+Your data is a folder of CSV files; see [docs/DATA_FORMAT.md](docs/DATA_FORMAT.md). For the
+default engine that is two files: who is symptomatic or recovered each day, and who met
+whom. `epiinfer from-cases` builds the folder from a case list and a contact list.
 `examples/forecast_new_data.py` is a runnable template.
 
 ## Reproduce the paper
 
 | Paper table | Command | Agreement |
 |---|---|---|
+| Tables 10–13 (October 2026), EpiInfer-contact | `uv run epiinfer reproduce --table sweep --data DIR` | the authors' summary is recomputed **exactly** from their predictions (192 cells); the engine is bit-exact against their notebook; re-running needs the Base data, which was not supplied |
+| Tables 2–5 / 14, EpiInfer "both known" | `uv run epiinfer reproduce --table epiinfer_age_structured --data DIR` | **exact** |
+| Appendix A: EpiInfer | `uv run epiinfer reproduce --table appendix --scale 0.2 --methods epiinfer_old --data DIR` | **exact**, all 720 cells |
 | `tab:openabm-forecast` | `uv run epiinfer reproduce --table openabm --data DIR` | within 1% |
 | `tab:age_structured`, vs the authors' own run of the same code | `uv run epiinfer reproduce --table age_structured --data DIR` | all 16 cells within 8% |
 | `tab:age_structured`, vs the published paper | (same command) | "both known" within 10%; the other modes differ (the paper reports a different run) |
@@ -69,7 +86,7 @@ is pre-symptomatic, and real contact-tracing data usually do not record that.
 | Holt-Winters columns | `uv run epiinfer reproduce --table hw_age_structured` / `hw_uniform --data DIR` | day 1 within 1.5%, day 20 off by 12–19% |
 | Appendix A: ARIMA | `uv run epiinfer reproduce --table appendix --scale 0.2 --methods arima --data DIR` | exact, all 720 cells |
 | Appendix A: EpiInfer-contact | `uv run epiinfer reproduce --table appendix --scale 0.2 --data DIR --jobs 4` | 79% of days 1–8 within 15%; days 9–19 match after a one-day shift (96%) |
-| `tab:uniform`'s EpiInfer-contact column | | cannot run: the uniform data has no contact list |
+| `tab:uniform`'s EpiInfer-contact column | | cannot run: the uniform data has no contact list (the notebook behind it is identified) |
 
 **Getting the data.** The exact datasets are release assets: `epiinfer fetch-data --url …`
 downloads one and checks it against the SHA-256 hashes shipped in the package.
@@ -81,32 +98,37 @@ used, by population, number of days and peak. It warns if not.
 The steps, runtimes and full results are in [docs/REPRODUCING.md](docs/REPRODUCING.md).
 
 Read [docs/PAPER_VS_CODE.md](docs/PAPER_VS_CODE.md) before relying on the published
-comparisons. It covers six main points:
+comparisons. Its main points:
 
-- the original code looked ahead at future contacts;
-- it was given the true pre-symptomatic people;
+- the 2025 code looked ahead at future contacts, and was given the true pre-symptomatic
+  people (the October 2026 method fixes the second);
 - ARIMA was scored on a different, harder window;
 - the Holt-Winters and LSTM columns came from a different simulated epidemic;
 - the paper's Appendix A runs one day ahead of the library from about day 9;
 - the paper's estimated-rate rows are a different run from the authors' own, which the
-  library does reproduce.
+  library does reproduce;
+- Tables 10–13 use a new method and a new fRMSE definition, and their ARIMA column mixes two
+  datasets;
+- the earlier EpiInfer's forecasts are made one day further from the data than
+  EpiInfer-contact's;
+- the uniform tables' EpiInfer-contact column came from a notebook that treats susceptible
+  people as the infectious ones.
 
 ## Docker
 
 The image bundles Python, the locked dependencies and every `epiinfer` command, so the only
-thing you need on the host is Docker. The image is built from this repository; it is not
-published to a registry. CI builds it on every push and runs `demo`, `forecast` and `run --plots`
-in it as an arbitrary non-root user.
+thing you need on the host is Docker. Released versions are published to the GitHub container
+registry. CI also builds the image on every push, runs `demo`, `forecast` and `run --plots` in
+it as an arbitrary non-root user, and runs the whole [tutorial](docs/TUTORIAL.md) in it.
 
 ### 1. Get the image
 
-**Pull a released image** (Intel/AMD and ARM, including Apple silicon). Released versions are
-published to GitHub's container registry when a version tag is pushed; see the repository's
-Releases and Packages pages for what exists. Until then, build it yourself, below.
+**Pull a released image** (Intel/AMD and ARM, including Apple silicon). Each version tag
+publishes one; see the repository's Packages page for the list.
 
 ```bash
-docker pull ghcr.io/nuzla/epiinfer:0.1.0
-docker tag  ghcr.io/nuzla/epiinfer:0.1.0 epiinfer      # the commands below call it "epiinfer"
+docker pull ghcr.io/nuzla/epiinfer:0.2.0
+docker tag  ghcr.io/nuzla/epiinfer:0.2.0 epiinfer      # the commands below call it "epiinfer"
 ```
 
 For a paper or a script, pin the exact image by digest, which is printed in each release's
@@ -152,12 +174,19 @@ Open `results/demo_backtest/forecast_demo_data_unknown_both.png` to see the back
 
 ### 4. Your own data
 
-Put the dataset folder (see [docs/DATA_FORMAT.md](docs/DATA_FORMAT.md)) in `./data`:
+Put the dataset folder (see [docs/DATA_FORMAT.md](docs/DATA_FORMAT.md)) in `./data`, or
+build it from a case list and a contact list with
+`epi from-cases --cases /data/cases.csv --contacts /data/contacts.csv --out /data/my_dataset`:
 
 ```bash
-epi forecast --data /data/my_dataset --horizon 14 --inc 7 --duration 7 --out results/my_forecast.csv
-epi run      --data /data/my_dataset --method unknown_both --inc 7 --duration 7 --out results/my_backtest
+epi describe --data /data/my_dataset                     # which engines can use it
+epi forecast --data /data/my_dataset --horizon 14 --inc 7 --duration 7 \
+    --out results/my_forecast.csv --plot results/my_forecast.png
+epi run      --data /data/my_dataset --method unknown_both --inc 7 --duration 7 \
+    --out results/my_backtest --plots
 ```
+
+The [tutorial](docs/TUTORIAL.md) explains each output.
 
 ### 5. Reproduce the paper
 
@@ -201,7 +230,7 @@ Most HPC systems run [Apptainer](https://apptainer.org/) (formerly Singularity) 
 Docker. It converts the same image, with nothing extra to install:
 
 ```bash
-apptainer pull epiinfer.sif docker://ghcr.io/nuzla/epiinfer:0.1.0     # once; makes epiinfer.sif
+apptainer pull epiinfer.sif docker://ghcr.io/nuzla/epiinfer:0.2.0     # once; makes epiinfer.sif
 mkdir -p data results
 apptainer run epiinfer.sif --version
 apptainer run --bind "$PWD/data:/data" epiinfer.sif forecast --data /data/my_dataset --out results/forecast.csv
@@ -238,15 +267,28 @@ Please open an issue if a command here does not work.
 
 ## Methods
 
-| `method` | What is estimated | Paper |
-|---|---|---|
-| `known_both` | nothing: true rates from `p1_true=…, p2_true=…` (default: the paper's AgeMixABM values, so set them for other data) | AgeMixABM tables |
-| `known_p1` / `known_p2` | p1 given → p2 searched / p2 given → p1 searched | AgeMixABM tables |
-| `unknown_both` (default) | p1 and p2, by grid search (ContinuousCalibrate) | AgeMixABM tables |
-| `empirical_p1` | p1 refit daily from observed S→A events; p2 = 1 | OpenABM table |
+`--method` says which rates are known; the engine says how the rest are found.
 
-The default timing (`inc`, `duration`) is 7/7 days for the grid methods and 5/11 for
-`empirical_p1`. Override it for your disease.
+| `method` | What is estimated | Engines |
+|---|---|---|
+| `known_both` | nothing: true rates from `--p1-true` / `--p2-true` | all |
+| `known_p1` / `known_p2` | p1 given → p2 searched / p2 given → p1 searched | all |
+| `unknown_both` (default) | p1 and p2 | all |
+| `empirical_p1` | p1 refit daily from observed S→A events; p2 = 1 (the OpenABM table) | `contact` only |
+
+How the search works:
+
+- **final**: every 5 days, a joint grid search (0.05–0.30) scored by 7-day forecasts over
+  the last 14 days, with one (p1, p2) for everyone.
+- **contact**: a daily grid search per age group, smoothed (ContinuousCalibrate).
+- **compartmental**: a 15 × 10 grid fitted to the last 5 days.
+
+`final` and `compartmental` take one known rate for everyone. `contact` takes one per age
+group; its default is the paper's AgeMixABM values, so set them for other data.
+
+The default timing (`inc`, `duration`) is 7/7 days, and 5/11 for `empirical_p1`. The final
+engine also has `--rec-duration` (7), the days a recovered person stays immune. Override
+them for your disease.
 
 ARIMA and Holt-Winters baselines follow the authors' notebooks and need the `baselines`
 extra: `uv run epiinfer baseline --data DIR --which arima`.
@@ -256,14 +298,15 @@ extra: `uv run epiinfer baseline --data DIR --which arima`.
 - Every result is a function of `--seed`. Each (seed, origin day, trajectory) has an
   independent random stream, so results are identical for any `--workers` / `--jobs`.
 - `run` and `forecast` never use contact data after the forecast origin. Pass
-  `contacts="recorded"` to reproduce the original scripts' look-ahead.
+  `contacts="recorded"` to reproduce the original scripts' look-ahead (contact and
+  compartmental engines; the final engine has none).
 
 ## Development
 
 ```bash
 uv run --all-extras pytest -q                        # unit, golden and regression tests
 EPIINFER_PAPER_DATA=/path/to/data uv run --all-extras pytest -m paper  # vs the paper's data
-uv run --all-extras python tools/mutation_check.py   # breaks 28 guards; all must be caught
+uv run --all-extras python tools/mutation_check.py   # breaks 54 guards; all must be caught
 uv run ruff check .
 uv lock --check                                      # uv.lock matches pyproject.toml
 uv build                                             # sdist + wheel
@@ -273,9 +316,15 @@ uv build                                             # sdist + wheel
 otherwise it removes the extras. To upgrade the locked versions, run
 `uv lock --upgrade && uv run --all-extras pytest`.
 
-`tests/golden_original_scripts.json` holds the outputs of the original research scripts on
-the demo data, plus the authors' own Holt-Winters notebook code. It was recorded by
-`tools/make_golden.py`, and the package must match it exactly.
+Three fixtures hold the outputs of the authors' own code on the demo data, and the package
+must match each exactly:
+
+- `tests/golden_original_scripts.json`: the 2025 scripts and the Holt-Winters notebook code,
+  recorded by `tools/make_golden.py`;
+- `tests/golden_final_notebook.json`: `abm_final.ipynb`, recorded by
+  `tools/make_golden_final.py`;
+- `tests/golden_compartmental_notebook.json`: the earlier EpiInfer notebooks, recorded by
+  `tools/make_golden_compartmental.py`.
 
 ## Citation
 

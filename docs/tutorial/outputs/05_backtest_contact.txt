@@ -1,0 +1,17 @@
+    dataset       method group  horizon  n      rmse    frmse  frmse_rel
+my_epidemic unknown_both  0-19        1 55  8.467381 0.035050   0.035853
+my_epidemic unknown_both  0-19        5 55 25.999091 0.107750   0.111471
+my_epidemic unknown_both  0-19       10 55 27.544932 0.112872   0.115790
+my_epidemic unknown_both  0-19       20 55 46.900946 0.193138   0.184898
+my_epidemic unknown_both 20-60        1 55  7.608835 0.021108   0.021951
+my_epidemic unknown_both 20-60        5 55 19.329483 0.054031   0.057532
+my_epidemic unknown_both 20-60       10 55 27.413912 0.075737   0.079442
+my_epidemic unknown_both 20-60       20 55 34.941653 0.096650   0.094731
+my_epidemic unknown_both   61+        1 55  3.105860 0.053633   0.053203
+my_epidemic unknown_both   61+        5 55  7.687097 0.131792   0.130814
+my_epidemic unknown_both   61+       10 55 10.257157 0.179378   0.187834
+my_epidemic unknown_both   61+       20 55 10.754170 0.182218   0.187718
+my_epidemic unknown_both   ALL        1 55 11.684699 0.017705   0.018046
+my_epidemic unknown_both   ALL        5 55 34.310136 0.052194   0.055401
+my_epidemic unknown_both   ALL       10 55 52.779822 0.079586   0.083180
+my_epidemic unknown_both   ALL       20 55 83.813474 0.126343   0.123363

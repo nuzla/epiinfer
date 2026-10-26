@@ -1,0 +1,8 @@
+dataset            my_epidemic
+people             10000
+days               0-100
+peak symptomatic   919 on day 19
+contacts per day   34187 (days 1-100)
+pre-symptomatic A  recorded
+usable engines     final, contact, compartmental
+results/01_epidemic_curve.png

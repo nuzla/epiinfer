@@ -48,8 +48,12 @@ def test_cli_demo_and_forecast(capsys, demo_path):
     assert main(["demo"]) == 0
     assert str(demo_path) in capsys.readouterr().out
     assert main(["forecast", "--data", str(demo_path), "--horizon", "2", "--num-sims", "3"]) == 0
-    out = capsys.readouterr().out.splitlines()
-    assert out[0].startswith("group,origin_day") and len(out) == 1 + 2 * 4
+    out = capsys.readouterr().out.splitlines()                 # final engine: the total only
+    assert out[0].startswith("group,origin_day") and len(out) == 1 + 2
+    assert main(["forecast", "--data", str(demo_path), "--horizon", "2", "--num-sims", "3",
+                 "--engine", "contact"]) == 0
+    out = capsys.readouterr().out.splitlines()                 # contact engine: 3 groups + ALL
+    assert len(out) == 1 + 2 * 4
 
 
 def test_cli_run_writes_outputs(tmp_path, demo_path):

@@ -171,5 +171,5 @@ def test_each_method_uses_its_transition_definition(data, monkeypatch):
 
     monkeypatch.setattr(type(data), "transitions", spy)
     run(data, "empirical_p1", start_eval=30, max_day=32, num_sims=1, horizons=(1,))
-    run(data, "known_both", start_eval=30, max_day=32, num_sims=1, horizons=(1,))
+    run(data, "known_both", start_eval=30, max_day=32, num_sims=1, horizons=(1,), engine="contact")
     assert seen == ["strict", "diff"]

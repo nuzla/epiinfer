@@ -91,3 +91,45 @@ def test_appendix_contact_one_scenario():
     assert (abs(ours[:8] / paper[:8] - 1) < 0.2).all(), (ours[:8] / paper[:8])
     shifted = [paper[h] / ours[h + 1] for h in range(9, 20)]
     assert (abs(pd.Series(shifted) - 1) < 0.2).all(), shifted
+
+
+def test_appendix_epiinfer_column_reproduces_every_cell():
+    """The earlier EpiInfer (epiinfer for base case.ipynb) is deterministic: all 720 cells agree
+    with the paper to its printed precision (two cells are truncated rather than rounded)."""
+    from epiinfer.reproduce import reproduce_appendix
+    for scale in ("0.2", "0.5", "2"):
+        df = reproduce_appendix(_data(f"appendix_april{scale}"), scale, methods=("epiinfer_old",))
+        assert len(df) == 240, (scale, len(df))
+        diff = abs(df["rmse"] - df["paper_rmse"])
+        assert (diff < 1e-3).all(), (scale, df.loc[diff.idxmax()])
+
+
+def test_calibration_notebooks_reproduce_the_authors_summaries():
+    """RMSE_summary<scale>.xlsx (Epiinfer for C_<scale>.ipynb: four knowledge settings, horizon
+    20, same-day contacts), 132 rows: RMSE and the chosen rates are identical."""
+    from pathlib import Path
+
+    from epiinfer.compartmental import GroupCounts, run_compartmental, summarize
+    from epiinfer.reproduce.appendix import scenarios
+    want = pd.read_csv(Path(__file__).parent / "data" / "c_notebook_summaries.csv", comment="#",
+                       dtype={"scale": str})
+    for scale, w in want.groupby("scale"):
+        for p1, p2, folder in scenarios(_data(f"appendix_april{scale}")):
+            rows = w[(abs(w["True_p1"] - p1) < 1e-12) & (abs(w["True_p2"] - p2) < 1e-12)]
+            pred = run_compartmental(GroupCounts.from_folder(folder), tuple(rows["Method"]),
+                                     p1, p2, horizons=(20,), contacts="same_day")
+            s = summarize(pred).set_index("case")
+            last = pred.groupby("case").last()
+            for r in rows.itertuples():
+                assert s.loc[r.Method, "rmse"] == pytest.approx(r.RMSE_abs, rel=1e-12)
+                assert last.loc[r.Method, "p1_used"] == pytest.approx(r.Est_p1, rel=1e-12)
+                assert last.loc[r.Method, "p2_used"] == pytest.approx(r.Est_p2, rel=1e-12)
+
+
+def test_age_specific_epiinfer_column_reproduces_exactly():
+    """Tables 2-5 / Table 14, EpiInfer "both known" (180.1720 / 408.3458 / 161.6292 / 95.9607)."""
+    from epiinfer.reproduce import reproduce_table
+    df = reproduce_table("epiinfer_age_structured", _data("age_structured"))
+    assert (df["dataset_check"] == "ok").all()
+    assert (abs(df["rmse"] - df["paper_rmse"]) < 1e-4).all(), df
+    assert (abs(df["frmse"] - df["paper_frmse"]) < 1e-4).all(), df

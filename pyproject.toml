@@ -4,7 +4,7 @@ build-backend = "hatchling.build"
 
 [project]
 name = "epiinfer"
-version = "0.1.0"
+version = "0.2.0"
 description = "EpiInfer-CONTACT: forecasting infection counts in epidemics from contact-tracing data (reproduction code for the Algorithms 2025 paper)"
 readme = "README.md"
 requires-python = ">=3.11"

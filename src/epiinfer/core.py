@@ -32,11 +32,14 @@ class EpiInferCore:
     """
 
     def __init__(self, population_ids, daily_contacts, age_of, inc: int, duration: int,
-                 n_groups: int | None = None):
+                 n_groups: int | None = None, contact_offset: int = 0):
         self.population = set(population_ids)
         self.age_of = np.asarray(age_of, dtype=np.int64)
         # n_groups comes from the dataset's labels: a group with no members still counts.
         self.n_groups = int(n_groups) if n_groups is not None else int(self.age_of.max()) + 1
+        # 0: day d's contacts create day d+1's exposures (the original scripts); 1: day d+1's
+        # contacts do, as in the simulator and the final notebook
+        self.contact_offset = int(contact_offset)
         self.inc = inc
         self.duration = duration
         self.adj: dict[int, dict[int, set]] = {}
@@ -125,7 +128,8 @@ class EpiInferCore:
         for day in range(start_day, end_day):
             susceptible = self.population - (asymp | infected | recovered)
 
-            newly_asymp = self.predict(asymp, susceptible, p1_vec, day, rng, graph_until)  # S -> A
+            newly_asymp = self.predict(asymp, susceptible, p1_vec, day + self.contact_offset, rng,
+                                       graph_until)                               # S -> A
             new_asymp[day + 1] = newly_asymp
 
             cohort = new_asymp.get((day + 1) - self.inc)                            # A -> I

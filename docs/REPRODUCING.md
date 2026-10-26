@@ -1,5 +1,17 @@
 # Reproducing the paper
 
+The paper's tables come from three different pieces of code. The library has an engine for
+each, and `epiinfer reproduce` picks the right one for every table:
+
+| Engine | Code it ports | Paper columns | How close |
+|---|---|---|---|
+| `final` (default for your own forecasts) | `abm_final.ipynb`, October 2026 | EpiInfer-contact in Tables 10–13 | the port is bit-exact against the notebook; the tables need the Base data, which was not supplied |
+| `contact` | `epiinfer_paper_aligned.py`, `epiinfer_empirical_p1.py`, 2025 | EpiInfer-contact in Tables 2–9, 14–17 and Appendix A | OpenABM within 1%; the authors' own age-structured run within 8%; Appendix up to a one-day offset |
+| `compartmental` | `epiinfer for base case.ipynb`, `Epiinfer for C_*.ipynb` | the "EpiInfer" columns (the earlier model) | Appendix A (720 cells) and Tables 2–5 / 14 "both known" exact |
+
+ARIMA and Holt-Winters are separate baselines (`epiinfer baseline`). For why some published
+numbers cannot be matched, see [`PAPER_VS_CODE.md`](PAPER_VS_CODE.md).
+
 ## 1. Get the data
 
 The paper's datasets came as these archives (names as supplied; unzip each into its own empty
@@ -9,11 +21,12 @@ folder). Folder names below are the ones the commands and the paper-data tests e
 |---|---|---|
 | `EpiInfer_contacttracing_datasets-…zip` | the authors' scripts and notebooks, plus `openabm_run3.zip` | `openabm_run3` → `openabm` |
 | `data-….zip` | `abmcontact10000aprilnewage/{age_structured, uniform}`: 365-day ABM runs. **`uniform/` has no `timed_edges.csv`** | `aprilnewage_age_structured`, `aprilnewage_uniform` |
-| `Archive.zip` | `abmcontact10000april0.2`, `april0.5`, `april2`: 12 `p1_*_p2_*` scenarios each, 13 age groups, 100 days, contact list included | `appendix_april0.2`, `appendix_april0.5`, `appendix_april2` |
+| `Archive.zip` | `abmcontact10000april0.2`, `april0.5`, `april2`: 12 `p1_*_p2_*` scenarios each, 13 age groups, 100 days, contact list included; plus the authors' `RMSE_summary<scale>.xlsx` | `appendix_april0.2`, `appendix_april0.5`, `appendix_april2` |
+| `abm_summary.csv`, `abm_predictions.csv` | the authors' outputs of `abm_final.ipynb` (Tables 10–13) | shipped in the package and the tests |
 | (the earlier `epiinfer/` folder) | `dataset` (the 915-peak age-structured epidemic) and `new_data_set` (= `openabm_run3`) | `age_structured`, `openabm` |
 
 Not among the files supplied: `uniform/timed_edges.csv`, the unscaled `abmcontact10000` folders
-(Appendix A's "Base" columns and Tables 9–12) and `openabm_run1`.
+(Appendix A's "Base" columns and Tables 10–13) and `openabm_run1`.
 
 For the paper-data tests put the folders side by side and point at them:
 
@@ -65,11 +78,23 @@ uv run epiinfer reproduce --table arima_age_structured --data data/age_structure
 uv run epiinfer reproduce --table arima_uniform        --data data/aprilnewage_uniform
 uv run epiinfer reproduce --table hw_age_structured    --data data/aprilnewage_age_structured
 uv run epiinfer reproduce --table appendix --scale 0.2 --data data/appendix_april0.2 --jobs 4
+uv run epiinfer reproduce --table epiinfer_age_structured --data data/age_structured
+uv run epiinfer reproduce --table sweep --data data/abmcontact10000 --jobs 12   # needs the Base data
 ```
 
 Each `--table` run writes a CSV and prints a comparison. Its columns are `paper_rmse`, `rmse`,
-`rmse_ratio`, `paper_frmse`, `frmse` and `n_origins`. `--table appendix` compares all 20
-horizons for the 12 (p1, p2) pairs of one contact scale (`--methods arima contact`).
+`rmse_ratio`, `paper_frmse`, `frmse` and `n_origins`. Three tables work differently:
+
+- **`--table appendix`** compares all 20 horizons for the 12 (p1, p2) pairs of one contact
+  scale. `--methods` picks from `arima`, `contact` and `epiinfer_old` (default: all three).
+- **`--table epiinfer_age_structured`** is the earlier EpiInfer's "both known" row of Tables
+  2–5 and 14. It is deterministic, so it takes under a second.
+- **`--table sweep`** re-runs Tables 10–13 (12 (p1, p2) pairs × 4 knowledge settings) with the
+  final engine. `--data` is the folder of `p1_*_p2_*` folders.
+  - It checks each folder against the paper's Base epidemics, using their symptomatic curves
+    (stored in the package), and prints `MISMATCH` for anything else.
+  - It writes `reproduce_sweep.csv` (paper vs ours), `sweep_predictions.csv` and
+    `sweep_trace.csv` (the calibrated rates).
 
 The CSV also has `dataset_check`, which identifies the data by population, number of days
 (counting up to day 100) and peak symptomatic count:
@@ -87,12 +112,17 @@ numbers. (Running `age_structured` on the `aprilnewage` data therefore warns, co
 - **Contacts.** `--contacts recorded` is the default here. It uses each future day's
   recorded contacts, which is how the published numbers were made. `--contacts frozen`
   removes that look-ahead; see `PAPER_VS_CODE.md`, item 1.
-- **Protocol.** Forecast origins are days 25–99 and horizons are 1, 5, 10 and 20. The
-  ARIMA table uses origins 10–50, matching the authors' ARIMA notebook.
+- **Protocol.** Each table uses the protocol of the code that produced it:
+  - contact engine: forecast origins 25–99;
+  - final engine: origins 25–79, 30 trajectories;
+  - earlier EpiInfer: origins 20–80, where an origin is the first projected day;
+  - ARIMA: origins 10–50, matching the authors' ARIMA notebook.
+
+  Horizons are 1, 5, 10 and 20 (all 20 days for the appendix).
 - **Smoke test.** `--quick` runs a reduced evaluation only. Its numbers are not comparable
   with the paper.
 - **Tests.** `EPIINFER_PAPER_DATA=data uv run --all-extras pytest -m paper` checks the
-  reproducible rows automatically, in about one minute.
+  reproducible rows automatically (10 tests, about 12 minutes on an Apple-silicon Mac).
 
 Runtimes were measured on an Apple-silicon Mac, single-threaded per method:
 
@@ -192,6 +222,34 @@ are aligned with the library's day h + 1: the paper's curve runs one day ahead o
 from about day 9 (`PAPER_VS_CODE.md`, item 7). Run time with `--jobs 4`: about 1 minute per
 epidemic at scale 0.2, 2 at scale 0.5, and 4–9 at scale 2.
 
+### The earlier EpiInfer (`compartmental` engine)
+
+The model is deterministic, so these reproduce exactly:
+
+| Result | Command | Agreement |
+|---|---|---|
+| Appendix A, EpiInfer column | `--table appendix --methods epiinfer_old` (per scale) | 720 of 720 cells to the printed 3 decimals (max difference 0.00052, two truncated cells) |
+| Tables 2–5 / 14, EpiInfer "both known" | `--table epiinfer_age_structured` | 180.1720 / 408.3458 / 161.6292 / 95.9607 and fractions 0.2621 / 0.5974 / 0.2427 / 0.1432, all exact |
+| the authors' `RMSE_summary<scale>.xlsx` (four settings, day 20) | paper-data test | 132 of 132 rows, including the chosen rates |
+
+The run-time is under a second per epidemic. Table 14's calibrated rows and the uniform
+column are not reproduced (`PAPER_VS_CODE.md`, item 9).
+
+### Tables 10–13 (October 2026): the final engine
+
+These come from `abm_final.ipynb`, which the `final` engine ports bit for bit
+(`tests/test_final_engine.py` runs the notebook's own code on the demo data).
+
+- **The authors' outputs are included.** `summarize_relative` recomputes their
+  `abm_summary.csv`, which is the 192 EpiInfer-contact cells of Tables 10–13, **exactly** from
+  their per-forecast `abm_predictions.csv`. That confirms the new fRMSE definition (root mean
+  squared relative error over days with a non-zero count).
+- **Re-running needs the Base data** (`abmcontact10000/p1_*_p2_*`), which was not supplied.
+  `--table sweep` is ready for it.
+- **On the scaled Appendix data the final engine is a different method.** With both rates
+  known it is within 15% of the Appendix column in only 11% of cells (`PAPER_VS_CODE.md`,
+  item 7), which is how we know the Appendix was made with the 2025 code.
+
 ### `tab:age_structured` on the `aprilnewage` data, for comparison
 
 On the 1,044-peak data the library's "both known" run gives 12.5 / 27.3 / 46.5 / 138.3 against the
@@ -201,14 +259,15 @@ epidemic (they do come from the 915-peak one, above). The warning `MISMATCH` mar
 ### Not checked
 
 - **`tab:uniform`'s EpiInfer-contact column.** The uniform data supplied has no
-  `timed_edges.csv`.
+  `timed_edges.csv`. The notebook that produced the column has been identified, and it seeds
+  its forecasts with the susceptible people (`PAPER_VS_CODE.md`, item 10).
 - **LSTM.** Not implemented. The authors' Keras model is trained without a seed, and it
   also used the `aprilnewage` data.
-- **Appendix A "Base" columns and Tables 9–12.** They need the unscaled `abmcontact10000`
-  folders, which were not supplied. The column for the older EpiInfer needs an implementation
-  of it, also not supplied.
+- **Appendix A "Base" columns and Tables 10–13.** They need the unscaled `abmcontact10000`
+  folders, which were not supplied.
 
 ## 4. Your own predictions
 
-See `README.md` and `docs/DATA_FORMAT.md`. `examples/forecast_new_data.py` is a runnable
-template.
+Start with [`TUTORIAL.md`](TUTORIAL.md), a step-by-step Docker walk-through with the exact
+outputs and plots. See also `README.md` and `docs/DATA_FORMAT.md`.
+`examples/forecast_new_data.py` is a runnable template.

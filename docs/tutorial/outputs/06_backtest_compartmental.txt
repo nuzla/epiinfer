@@ -1,0 +1,5 @@
+    dataset       method group  horizon  n       rmse    frmse  frmse_rel
+my_epidemic unknown_both   ALL        1 55  43.414112 0.065783   0.066390
+my_epidemic unknown_both   ALL        5 55  89.916927 0.136784   0.147207
+my_epidemic unknown_both   ALL       10 55 917.458551 1.383419   1.407327
+my_epidemic unknown_both   ALL       20 55 800.591472 1.206834   1.213571

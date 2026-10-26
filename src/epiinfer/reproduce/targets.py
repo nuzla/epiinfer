@@ -2,7 +2,8 @@
 
 Values are the EpiInfer-contact columns of the paper's summary tables
 (``tab:age_structured``, ``tab:uniform``) and the new-method ("red") values of
-``tab:openabm-forecast``, transcribed from the 2025 *Algorithms* proof source.
+``tab:openabm-forecast``, transcribed from the 2025 *Algorithms* proof source, plus the
+earlier EpiInfer's "both known" row of the age-specific tables (25 October 2026 PDF).
 Layout: ``{(method, horizon): (rmse, frmse)}``.
 
 The paper reports a single Monte-Carlo run without seeds, so exact equality is not
@@ -78,6 +79,14 @@ HW_AGE_STRUCTURED = {("holt_winters", 1): (83.42, None), ("holt_winters", 5): (1
 HW_UNIFORM = {("holt_winters", 1): (90.51, None), ("holt_winters", 5): (139.44, None),
               ("holt_winters", 10): (177.95, None), ("holt_winters", 20): (260.39, None)}
 
+#: EpiInfer (the earlier compartmental model), "Both known" row of Table 14 = the EpiInfer
+#: column of Tables 2-5 (25 October 2026 PDF). The fraction is the relative fRMSE.
+#: Deterministic: reproduced exactly by epiinfer.compartmental with per-group exposure.
+EPIINFER_AGE_STRUCTURED = {("known_both", 1): (180.1720, 0.2621),
+                           ("known_both", 5): (408.3458, 0.5974),
+                           ("known_both", 10): (161.6292, 0.2427),
+                           ("known_both", 20): (95.9607, 0.1432)}
+
 #: Identity of the dataset each table was computed on: (people, days, peak I).
 #: ``reproduce`` warns when the supplied folder does not match.
 FINGERPRINT_AGE = (10000, 101, 915)          # archived age_structured (EpiInfer + ARIMA)
@@ -90,6 +99,12 @@ TABLES = {
                        "authors_run": AUTHORS_RUN_AGE_STRUCTURED,
                        "methods": ("known_both", "known_p1", "known_p2", "unknown_both"),
                        "default_data": "age_structured", "caption": "tab:age_structured"},
+    "epiinfer_age_structured": {"targets": EPIINFER_AGE_STRUCTURED, "group": "ALL",
+                                "fingerprint": FINGERPRINT_AGE, "methods": ("known_both",),
+                                "compartmental": {"contacts": "same_day", "exposure": "per_group",
+                                                  "origins": (20, 80)},
+                                "default_data": "age_structured",
+                                "caption": "Tables 2-5, 14 (EpiInfer)"},
     "uniform": {"targets": UNIFORM, "group": "ALL",
                 "methods": ("known_both", "known_p1", "known_p2", "unknown_both"),
                 "default_data": "uniform", "caption": "tab:uniform"},

@@ -11,3 +11,5 @@ runs/
 results/
 data/*/
 *.zip
+tutorial-work/
+epiinfer-tutorial/

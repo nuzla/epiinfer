@@ -1,6 +1,51 @@
 # Changelog
 
-## 0.1.0 (unreleased)
+## 0.2.0
+
+The October 2026 version of the paper, the earlier EpiInfer, and a Docker tutorial.
+
+- **New default engine, `final`.** A bit-exact port of the authors' `abm_final.ipynb`, the
+  method behind the new Tables 10–13 (`epiinfer.final`). It rebuilds the pre-symptomatic
+  history from infections, so it needs **no A state**: only who is symptomatic or recovered,
+  plus the contacts. Recovered people become susceptible again after `rec_duration` days.
+  Calibration is a joint grid search every 5 days, with damping. `FINAL` preset: 30
+  trajectories, origins 25–79. The 2025 code stays available as `engine="contact"`.
+- **New engine, `compartmental`.** EpiInfer, the earlier model the paper compares against
+  (`epiinfer.compartmental`). It is deterministic and needs only daily counts per age group.
+  It reproduces exactly:
+  - Appendix A's EpiInfer column (720 cells);
+  - Tables 2–5 / 14 "both known" (per-group exposure);
+  - the authors' own `RMSE_summary*.xlsx`.
+- **New `reproduce` targets:**
+  - `--table sweep` (Tables 10–13, needs the Base data; the Base curves are stored to
+    recognise it);
+  - `--table epiinfer_age_structured`;
+  - `--table appendix --methods epiinfer_old`;
+  - `--offset 0|1` for the contact engine's contact-day timing.
+- **Metrics.** `relative_rmse` and a `frmse_rel` column: the October paper's fRMSE (root
+  mean squared relative error). `summarize_relative` recomputes the authors'
+  `abm_summary.csv` exactly from `abm_predictions.csv`.
+- **CLI and plots.**
+  - `describe --data D [--plot]` prints population, days, peak, contacts and the usable
+    engines.
+  - `from-cases` (and `epiinfer.convert.cases_to_dataset`) builds a dataset folder from a
+    case list and a contact list.
+  - `forecast --plot`, `run --plots` (now with an RMSE-by-horizon chart), `plot-rmse` to
+    compare methods, and `baseline --out`.
+  - `--engine`, `--p1-true`/`--p2-true` and `--rec-duration` on `forecast` and `run`.
+- **Tutorial.** `docs/TUTORIAL.md` walks through simulate → describe → forecast → back-test
+  → compare in Docker, with the exact outputs and plots. `docs/tutorial/run_tutorial.sh`
+  runs it, and a CI job runs it inside the image and checks the CSVs against the committed
+  ones.
+- **Findings** (`docs/PAPER_VS_CODE.md`, items 7–10):
+  - the October method and its Tables 10–13;
+  - three code variants tested against the Appendix;
+  - the earlier EpiInfer's one-day-later forecasts and contact look-ahead;
+  - the uniform tables' EpiInfer-contact column comes from a notebook that seeds forecasts
+    with the susceptible people.
+- `docs/DATA_FORMAT.md` documents what each engine needs.
+
+## 0.1.0
 
 First packaged version of the EpiInfer-CONTACT research code.
 
